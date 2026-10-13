@@ -104,9 +104,10 @@ function renderModrinthHits(hits, serverId) {
           <div>
             <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:12px;">
               ${p.iconUrl ? `
-                <img src="${p.iconUrl}" alt="" style="width:40px;height:40px;border-radius:8px;object-fit:cover;flex-shrink:0;">
+                <img src="${p.iconUrl}" alt="" style="width:40px;height:40px;border-radius:8px;object-fit:cover;flex-shrink:0;" onerror="this.onerror=null;this.style.display='none';this.nextElementSibling.style.display='flex';">
+                <div style="display:none;width:40px;height:40px;border-radius:8px;background:var(--bg-subtle);align-items:center;justify-content:center;color:var(--text-subtle);font-size:18px;">🧩</div>
               ` : `
-                <div style="width:40px;height:40px;border-radius:8px;background:var(--bg-subtle);display:flex;align-items:center;justify-content:center;color:var(--text-subtle);font-weight:700;">PL</div>
+                <div style="width:40px;height:40px;border-radius:8px;background:var(--bg-subtle);display:flex;align-items:center;justify-content:center;color:var(--text-subtle);font-size:18px;">🧩</div>
               `}
               <div style="min-width:0;">
                 <h4 style="font-size:14px;font-weight:700;color:var(--text-main);line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
@@ -121,12 +122,18 @@ function renderModrinthHits(hits, serverId) {
             </p>
           </div>
 
-          <div style="border-top:1px solid var(--border);padding-top:10px;display:flex;align-items:center;justify-content:space-between;">
+          <div style="border-top:1px solid var(--border);padding-top:10px;display:flex;align-items:center;justify-content:space-between;gap:8px;">
             <div style="font-size:11px;color:var(--text-muted);display:flex;align-items:center;gap:4px;">
               <svg style="width:12px;height:12px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
               <span>${p.downloads.toLocaleString()}</span>
             </div>
-            <button class="btn btn-primary btn-sm btn-open-project" data-id="${p.id}">View Details</button>
+            <div style="display:inline-flex;gap:6px;align-items:center;">
+              <a href="https://modrinth.com/plugin/${encodeURIComponent(p.slug || p.id)}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" style="text-decoration:none;display:inline-flex;align-items:center;gap:4px;" title="View on Modrinth" onclick="event.stopPropagation();">
+                <span>Page</span>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+              </a>
+              <button class="btn btn-primary btn-sm btn-open-project" data-id="${p.id}">View Details</button>
+            </div>
           </div>
         </div>
       `).join('')}
@@ -163,14 +170,20 @@ async function openProjectModal(projectId, serverId) {
       wide: true,
       contentHtml: `
         <div style="display:flex;flex-direction:column;gap:16px;">
-          <div style="display:flex;align-items:center;gap:16px;">
-            ${project.iconUrl ? `<img src="${project.iconUrl}" style="width:48px;height:48px;border-radius:8px;">` : ''}
-            <div>
-              <p style="font-size:13px;color:var(--text-muted);">${escapeHtml(project.description)}</p>
-              <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;">
-                ${(project.categories || []).map(c => `<span class="badge badge-gray">${escapeHtml(c)}</span>`).join('')}
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;">
+            <div style="display:flex;align-items:center;gap:16px;min-width:0;flex:1;">
+              ${project.iconUrl ? `<img src="${project.iconUrl}" style="width:48px;height:48px;border-radius:8px;object-fit:cover;flex-shrink:0;">` : ''}
+              <div style="min-width:0;">
+                <p style="font-size:13px;color:var(--text-muted);">${escapeHtml(project.description)}</p>
+                <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;">
+                  ${(project.categories || []).map(c => `<span class="badge badge-gray">${escapeHtml(c)}</span>`).join('')}
+                </div>
               </div>
             </div>
+            <a href="https://modrinth.com/plugin/${encodeURIComponent(project.slug || project.id)}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" style="text-decoration:none;display:inline-flex;align-items:center;gap:4px;flex-shrink:0;" title="View on Modrinth">
+              <span>View on Modrinth</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+            </a>
           </div>
 
           <h4 style="font-size:14px;font-weight:700;margin-top:8px;">Available Versions</h4>
@@ -241,17 +254,43 @@ async function openProjectModal(projectId, serverId) {
         const hash = btn.dataset.hash;
         const projectName = btn.dataset.project;
 
+        btn.disabled = true;
+        btn.innerText = 'Installing...';
+
         try {
-          toast.info(`Queued install for ${filename}...`);
-          await api.post(`/api/servers/${serverId}/modrinth/install`, {
+          toast.info(`Downloading ${filename}...`);
+          const task = await api.post(`/api/servers/${serverId}/modrinth/install`, {
             fileUrl,
             filename,
             hash,
             projectName
           });
-          toast.success('Installation task started!');
+
+          if (task && task.id) {
+            for (let i = 0; i < 40; i++) {
+              await new Promise(r => setTimeout(r, 600));
+              try {
+                const t = await api.get(`/api/tasks/${task.id}`);
+                if (t.state === 'COMPLETED') {
+                  break;
+                } else if (t.state === 'FAILED' || t.state === 'CANCELLED') {
+                  throw new Error(t.error || t.message || 'Installation task failed');
+                }
+              } catch (pe) {
+                if (pe.message && (pe.message.includes('failed') || pe.message.includes('mismatch'))) {
+                  throw pe;
+                }
+              }
+            }
+          }
+
+          btn.innerText = 'Installed!';
+          btn.className = 'btn btn-secondary btn-sm';
+          toast.success(`${projectName} installed successfully!`);
         } catch (e) {
-          toast.error(e.message);
+          btn.disabled = false;
+          btn.innerText = 'Install';
+          toast.error('Install failed: ' + e.message);
         }
       });
     });

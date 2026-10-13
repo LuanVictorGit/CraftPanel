@@ -224,23 +224,40 @@ function openInstallPluginModal(serverId) {
         resultsContainer.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text-muted);">No plugins found for this search.</div>';
         return;
       }
-      resultsContainer.innerHTML = hits.map(hit => `
+      resultsContainer.innerHTML = hits.map(hit => {
+        const iconSrc = hit.iconUrl || hit.icon_url || '';
+        const projId = hit.id || hit.slug;
+        const pageSlug = hit.slug || hit.id;
+        const pageUrl = `https://modrinth.com/plugin/${encodeURIComponent(pageSlug)}`;
+        return `
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;background:var(--bg-main);border:1px solid var(--border);border-radius:6px;">
-          <div style="display:flex;align-items:center;gap:10px;min-width:0;">
-            ${hit.icon_url ? `<img src="${hit.icon_url}" style="width:36px;height:36px;border-radius:6px;flex-shrink:0;">` : `<div style="width:36px;height:36px;border-radius:6px;background:var(--border);flex-shrink:0;"></div>`}
-            <div style="min-width:0;">
+          <div style="display:flex;align-items:center;gap:10px;min-width:0;flex:1;">
+            ${iconSrc ? `
+              <img src="${escapeHtml(iconSrc)}" alt="" style="width:38px;height:38px;border-radius:6px;flex-shrink:0;object-fit:cover;" onerror="this.onerror=null;this.style.display='none';this.nextElementSibling.style.display='flex';">
+              <div style="display:none;width:38px;height:38px;border-radius:6px;background:var(--border);flex-shrink:0;align-items:center;justify-content:center;color:var(--text-muted);font-size:16px;">🧩</div>
+            ` : `
+              <div style="width:38px;height:38px;border-radius:6px;background:var(--border);flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:16px;">🧩</div>
+            `}
+            <div style="min-width:0;flex:1;">
               <div style="display:flex;align-items:center;gap:6px;">
                 <span style="font-weight:600;font-size:13px;color:var(--text-main);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(hit.title)}</span>
-                <span style="font-size:10px;color:var(--text-muted);">by ${escapeHtml(hit.author)}</span>
+                ${hit.author ? `<span style="font-size:10px;color:var(--text-muted);flex-shrink:0;">by ${escapeHtml(hit.author)}</span>` : ''}
               </div>
               <p style="font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:2px 0 0 0;">${escapeHtml(hit.description || '')}</p>
             </div>
           </div>
-          <button class="btn btn-primary btn-sm btn-modal-install" data-project="${hit.project_id}" data-name="${escapeHtml(hit.title)}" style="flex-shrink:0;">
-            Install
-          </button>
+          <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+            <a href="${pageUrl}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" style="text-decoration:none;display:inline-flex;align-items:center;gap:4px;" title="View plugin details on Modrinth">
+              <span>View</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+            </a>
+            <button class="btn btn-primary btn-sm btn-modal-install" data-project="${escapeHtml(projId)}" data-name="${escapeHtml(hit.title)}">
+              Install
+            </button>
+          </div>
         </div>
-      `).join('');
+      `;
+      }).join('');
 
       resultsContainer.querySelectorAll('.btn-modal-install').forEach(btn => {
         btn.addEventListener('click', async () => {
@@ -256,20 +273,50 @@ function openInstallPluginModal(serverId) {
               btn.innerText = 'Install';
               return;
             }
-            const firstVer = versions[0].version || versions[0];
-            const primaryFile = (firstVer.files && firstVer.files.length > 0) ? firstVer.files.find(f => f.primary) || firstVer.files[0] : null;
-            if (!primaryFile) {
+            const selectedEntry = versions.find(v => {
+              const st = v.compatibility?.status;
+              return st === 'COMPATIBLE_CONFIRMED';
+            }) || versions.find(v => {
+              const st = v.compatibility?.status;
+              return st === 'PARTIAL_COMPATIBILITY' || st === 'NEEDS_ANALYSIS';
+            }) || versions[0];
+
+            const chosenVer = selectedEntry.version || selectedEntry;
+            const files = chosenVer.files || [];
+            const primaryFile = files.find(f => f.primary) || files.find(f => f.filename && f.filename.endsWith('.jar')) || files[0];
+            if (!primaryFile || !primaryFile.url) {
               toast.error('No downloadable file in release');
               btn.disabled = false;
               btn.innerText = 'Install';
               return;
             }
-            await api.post(`/api/servers/${serverId}/modrinth/install`, {
+
+            btn.innerText = 'Downloading...';
+            const task = await api.post(`/api/servers/${serverId}/modrinth/install`, {
               fileUrl: primaryFile.url,
               filename: primaryFile.filename,
               hash: primaryFile.hashes?.sha512 || primaryFile.hashes?.sha1 || '',
               projectName: projName
             });
+
+            if (task && task.id) {
+              for (let i = 0; i < 40; i++) {
+                await new Promise(r => setTimeout(r, 600));
+                try {
+                  const t = await api.get(`/api/tasks/${task.id}`);
+                  if (t.state === 'COMPLETED') {
+                    break;
+                  } else if (t.state === 'FAILED' || t.state === 'CANCELLED') {
+                    throw new Error(t.error || t.message || 'Installation task failed');
+                  }
+                } catch (pe) {
+                  if (pe.message && (pe.message.includes('failed') || pe.message.includes('mismatch'))) {
+                    throw pe;
+                  }
+                }
+              }
+            }
+
             btn.innerText = 'Installed!';
             btn.className = 'btn btn-secondary btn-sm';
             toast.success(`${projName} installed successfully!`);
@@ -315,7 +362,7 @@ async function checkPluginUpdates(serverId) {
   toast.info('Checking for plugin updates on Modrinth...');
   try {
     const res = await api.post(`/api/servers/${serverId}/modrinth/check-updates`);
-    const updates = res.updates || [];
+    const updates = Array.isArray(res) ? res.filter(r => r.hasUpdate) : (res.updates || []);
     if (updates.length === 0) {
       toast.success('All installed plugins are up to date!');
     } else {
