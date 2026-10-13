@@ -1,0 +1,17 @@
+target/
+*.class
+*.jar
+*.war
+*.ear
+*.log
+data/database.db
+data/database.db-*
+data/backups/
+data/logs/
+data/servers/
+dependency-reduced-pom.xml
+.idea/
+*.iml
+.vscode/
+.DS_Store
+Thumbs.db

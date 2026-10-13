@@ -1,0 +1,309 @@
+package br.com.craftpanel.modrinth;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.InputStream;
+import java.net.URI;
+import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.security.MessageDigest;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HexFormat;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.function.Consumer;
+
+public class ModrinthClient {
+    private static final Logger LOGGER = LoggerFactory.getLogger(ModrinthClient.class);
+    private final HttpClient httpClient;
+    private final ObjectMapper mapper;
+    private final String baseUrl;
+    private final String userAgent;
+
+    public ModrinthClient(String userAgent, String baseUrl) {
+        this.userAgent = userAgent != null ? userAgent : "CraftPanel-Web/1.0 (contact: minebuilders.com.br/discord)";
+        this.baseUrl = baseUrl != null ? baseUrl : "https://api.modrinth.com/v2";
+        this.httpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(10))
+                .followRedirects(HttpClient.Redirect.NORMAL)
+                .build();
+        this.mapper = new ObjectMapper();
+    }
+
+    public record SearchResult(
+            List<ModrinthProject> hits,
+            int totalHits,
+            int offset,
+            int limit
+    ) {}
+
+    public SearchResult search(String query, String gameVersion, String loader, String index, int limit, int offset) throws Exception {
+        StringBuilder url = new StringBuilder(baseUrl).append("/search?");
+        List<String> params = new ArrayList<>();
+
+        if (query != null && !query.isBlank()) {
+            params.add("query=" + URLEncoder.encode(query.trim(), StandardCharsets.UTF_8));
+        }
+
+        List<String> facets = new ArrayList<>();
+        facets.add("[\"project_type:plugin\"]");
+
+        if (loader != null && !loader.isBlank()) {
+            facets.add("[\"categories:" + loader.toLowerCase().trim() + "\"]");
+        }
+        if (gameVersion != null && !gameVersion.isBlank()) {
+            facets.add("[\"versions:" + gameVersion.trim() + "\"]");
+        }
+
+        params.add("facets=" + URLEncoder.encode("[" + String.join(",", facets) + "]", StandardCharsets.UTF_8));
+        params.add("limit=" + Math.min(Math.max(limit, 1), 50));
+        params.add("offset=" + Math.max(offset, 0));
+
+        if (index != null && !index.isBlank()) {
+            params.add("index=" + URLEncoder.encode(index.trim(), StandardCharsets.UTF_8));
+        }
+
+        url.append(String.join("&", params));
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(url.toString()))
+                .header("User-Agent", userAgent)
+                .GET()
+                .build();
+
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() != 200) {
+            throw new IllegalStateException("Modrinth API error " + response.statusCode() + ": " + response.body());
+        }
+
+        JsonNode root = mapper.readTree(response.body());
+        int totalHits = root.path("total_hits").asInt();
+        int respOffset = root.path("offset").asInt();
+        int respLimit = root.path("limit").asInt();
+
+        List<ModrinthProject> hits = new ArrayList<>();
+        JsonNode hitsNode = root.path("hits");
+        if (hitsNode.isArray()) {
+            for (JsonNode h : hitsNode) {
+                hits.add(mapProjectFromSearch(h));
+            }
+        }
+
+        return new SearchResult(hits, totalHits, respOffset, respLimit);
+    }
+
+    public Optional<ModrinthProject> getProject(String idOrSlug) {
+        try {
+            String url = baseUrl + "/project/" + URLEncoder.encode(idOrSlug.trim(), StandardCharsets.UTF_8);
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .header("User-Agent", userAgent)
+                    .GET()
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() == 404) {
+                return Optional.empty();
+            }
+            if (response.statusCode() != 200) {
+                throw new IllegalStateException("Modrinth project error: " + response.statusCode());
+            }
+
+            JsonNode node = mapper.readTree(response.body());
+            return Optional.of(mapProjectDetail(node));
+        } catch (Exception e) {
+            LOGGER.error("Failed to fetch project details for {}", idOrSlug, e);
+            return Optional.empty();
+        }
+    }
+
+    public List<ModrinthVersion> getProjectVersions(String idOrSlug, String gameVersion, String loader) throws Exception {
+        StringBuilder url = new StringBuilder(baseUrl).append("/project/")
+                .append(URLEncoder.encode(idOrSlug.trim(), StandardCharsets.UTF_8))
+                .append("/version?");
+
+        List<String> params = new ArrayList<>();
+        if (loader != null && !loader.isBlank()) {
+            params.add("loaders=" + URLEncoder.encode("[\"" + loader.toLowerCase().trim() + "\"]", StandardCharsets.UTF_8));
+        }
+        if (gameVersion != null && !gameVersion.isBlank()) {
+            params.add("game_versions=" + URLEncoder.encode("[\"" + gameVersion.trim() + "\"]", StandardCharsets.UTF_8));
+        }
+        url.append(String.join("&", params));
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(url.toString()))
+                .header("User-Agent", userAgent)
+                .GET()
+                .build();
+
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() != 200) {
+            throw new IllegalStateException("Failed to load versions for " + idOrSlug + ": " + response.statusCode());
+        }
+
+        JsonNode root = mapper.readTree(response.body());
+        List<ModrinthVersion> list = new ArrayList<>();
+        if (root.isArray()) {
+            for (JsonNode vNode : root) {
+                list.add(mapVersion(vNode));
+            }
+        }
+        return list;
+    }
+
+    public void downloadFile(String downloadUrl, Path destination, Consumer<Integer> progressConsumer, String expectedHash) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(downloadUrl))
+                .header("User-Agent", userAgent)
+                .GET()
+                .build();
+
+        HttpResponse<InputStream> response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
+        if (response.statusCode() != 200) {
+            throw new IllegalStateException("Download failed with HTTP " + response.statusCode());
+        }
+
+        long contentLength = response.headers().firstValueAsLong("Content-Length").orElse(-1L);
+        Path tempFile = destination.resolveSibling(destination.getFileName().toString() + ".download");
+
+        MessageDigest digest = expectedHash != null && expectedHash.length() == 128
+                ? MessageDigest.getInstance("SHA-512")
+                : MessageDigest.getInstance("SHA-1");
+
+        try (InputStream in = response.body();
+             var out = Files.newOutputStream(tempFile)) {
+            byte[] buf = new byte[8192];
+            long totalRead = 0;
+            int n;
+            while ((n = in.read(buf)) != -1) {
+                out.write(buf, 0, n);
+                digest.update(buf, 0, n);
+                totalRead += n;
+                if (contentLength > 0 && progressConsumer != null) {
+                    int percent = (int) ((totalRead * 100) / contentLength);
+                    progressConsumer.accept(percent);
+                }
+            }
+        }
+
+        if (expectedHash != null && !expectedHash.isBlank()) {
+            String calculated = HexFormat.of().formatHex(digest.digest());
+            if (!calculated.equalsIgnoreCase(expectedHash.trim())) {
+                Files.deleteIfExists(tempFile);
+                throw new SecurityException("Downloaded file hash mismatch: expected " + expectedHash + " but got " + calculated);
+            }
+        }
+
+        Files.move(tempFile, destination, StandardCopyOption.REPLACE_EXISTING);
+    }
+
+    private ModrinthProject mapProjectFromSearch(JsonNode node) {
+        List<String> categories = new ArrayList<>();
+        JsonNode cats = node.path("categories");
+        if (cats.isArray()) {
+            for (JsonNode c : cats) categories.add(c.asText());
+        }
+
+        return new ModrinthProject(
+                node.path("project_id").asText(),
+                node.path("slug").asText(),
+                node.path("title").asText(),
+                node.path("description").asText(),
+                categories,
+                node.path("client_side").asText(),
+                node.path("server_side").asText(),
+                node.path("icon_url").asText(),
+                node.path("downloads").asInt(),
+                node.path("follows").asInt(),
+                node.path("date_modified").asText(),
+                node.path("author").asText()
+        );
+    }
+
+    private ModrinthProject mapProjectDetail(JsonNode node) {
+        List<String> categories = new ArrayList<>();
+        JsonNode cats = node.path("categories");
+        if (cats.isArray()) {
+            for (JsonNode c : cats) categories.add(c.asText());
+        }
+
+        return new ModrinthProject(
+                node.path("id").asText(),
+                node.path("slug").asText(),
+                node.path("title").asText(),
+                node.path("description").asText(),
+                categories,
+                node.path("client_side").asText(),
+                node.path("server_side").asText(),
+                node.path("icon_url").asText(),
+                node.path("downloads").asInt(),
+                node.path("followers").asInt(),
+                node.path("updated").asText(),
+                ""
+        );
+    }
+
+    private ModrinthVersion mapVersion(JsonNode node) {
+        List<String> gameVersions = new ArrayList<>();
+        for (JsonNode gv : node.path("game_versions")) {
+            gameVersions.add(gv.asText());
+        }
+
+        List<String> loaders = new ArrayList<>();
+        for (JsonNode l : node.path("loaders")) {
+            loaders.add(l.asText());
+        }
+
+        List<ModrinthVersion.VersionFile> files = new ArrayList<>();
+        for (JsonNode f : node.path("files")) {
+            Map<String, String> hashes = new HashMap<>();
+            JsonNode hNode = f.path("hashes");
+            if (hNode.isObject()) {
+                hNode.fields().forEachRemaining(entry -> hashes.put(entry.getKey(), entry.getValue().asText()));
+            }
+            files.add(new ModrinthVersion.VersionFile(
+                    f.path("url").asText(),
+                    f.path("filename").asText(),
+                    f.path("primary").asBoolean(),
+                    f.path("size").asLong(),
+                    hashes
+            ));
+        }
+
+        List<ModrinthVersion.VersionDependency> deps = new ArrayList<>();
+        for (JsonNode d : node.path("dependencies")) {
+            deps.add(new ModrinthVersion.VersionDependency(
+                    d.path("version_id").asText(),
+                    d.path("project_id").asText(),
+                    d.path("file_name").asText(),
+                    d.path("dependency_type").asText()
+            ));
+        }
+
+        return new ModrinthVersion(
+                node.path("id").asText(),
+                node.path("project_id").asText(),
+                node.path("name").asText(),
+                node.path("version_number").asText(),
+                gameVersions,
+                loaders,
+                files,
+                deps,
+                node.path("changelog").asText(),
+                node.path("date_published").asText()
+        );
+    }
+}

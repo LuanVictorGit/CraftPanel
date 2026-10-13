@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CraftPanel Web — Minecraft Server Management</title>
+  <link rel="icon" type="image/png" href="/assets/img/logo.png">
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+
+  <!-- Loading Screen -->
+  <div id="app-loading" style="display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:16px;">
+    <img src="/assets/img/logo.png" alt="CraftPanel Logo" style="height:64px;width:auto;">
+    <div id="loading-text" style="font-weight:600;color:#64748B;">Loading CraftPanel Web...</div>
+  </div>
+
+  <!-- Setup Screen -->
+  <div id="setup-screen" class="auth-wrapper" style="display:none;">
+    <div class="auth-card">
+      <div class="auth-header">
+        <img src="/assets/img/logo.png" alt="CraftPanel" class="auth-logo">
+        <h1 class="auth-title" data-i18n="initialSetup">Initial Setup</h1>
+        <p class="auth-subtitle" data-i18n="initialSetupDesc">Create the initial administrator account to get started</p>
+      </div>
+      <form id="setup-form">
+        <div class="form-group">
+          <label class="form-label" for="setup-username" data-i18n="username">Username</label>
+          <input type="text" id="setup-username" class="form-input" placeholder="e.g. admin" required autocomplete="username">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="setup-displayname" data-i18n="displayName">Display Name</label>
+          <input type="text" id="setup-displayname" class="form-input" placeholder="e.g. Administrator" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="setup-password" data-i18n="password">Password (minimum 8 characters)</label>
+          <input type="password" id="setup-password" class="form-input" placeholder="••••••••" required autocomplete="new-password">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="setup-password-confirm" data-i18n="confirmPassword">Confirm Password</label>
+          <input type="password" id="setup-password-confirm" class="form-input" placeholder="••••••••" required autocomplete="new-password">
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;margin-top:10px;" data-i18n="completeAndStart">Complete Setup and Start Panel</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Login Screen -->
+  <div id="login-screen" class="auth-wrapper" style="display:none;">
+    <div class="auth-card">
+      <div class="auth-header">
+        <img src="/assets/img/logo.png" alt="CraftPanel" class="auth-logo">
+        <h1 class="auth-title" data-i18n="panelAccess">Sign In</h1>
+        <p class="auth-subtitle" data-i18n="panelAccessSubtitle">Modern Minecraft server management panel</p>
+      </div>
+      <form id="login-form">
+        <div class="form-group">
+          <label class="form-label" for="login-username" data-i18n="username">Username</label>
+          <input type="text" id="login-username" class="form-input" placeholder="Your username" required autocomplete="username">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="login-password" data-i18n="password">Password</label>
+          <input type="password" id="login-password" class="form-input" placeholder="Your password" required autocomplete="current-password">
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;margin-top:10px;" data-i18n="signIn">Sign In</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Main App Layout -->
+  <div id="main-app" class="app-layout" style="display:none;">
+    <!-- Sidebar -->
+    <aside class="app-sidebar">
+      <div class="sidebar-header">
+        <img src="/assets/img/logo.png" alt="CraftPanel" class="brand-logo">
+        <div>
+          <div class="brand-title">CraftPanel</div>
+          <span class="brand-badge">v1.0.0</span>
+        </div>
+      </div>
+
+      <!-- Server Selector -->
+      <div class="sidebar-server-context">
+        <label for="active-server-select" style="font-size:11px;font-weight:700;color:var(--text-muted);display:block;margin-bottom:4px;" data-i18n="selectedInstance">SELECTED INSTANCE</label>
+        <select id="active-server-select" class="server-select">
+          <option value="" data-i18n="selectServerPrompt">Select a server...</option>
+        </select>
+      </div>
+
+      <!-- Navigation -->
+      <nav class="sidebar-nav">
+        <div class="nav-section-title" data-i18n="general">General</div>
+        <div class="nav-item active" data-view="dashboard">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>
+          <span data-i18n="dashboard">Dashboard</span>
+        </div>
+        <div class="nav-item" data-view="servers">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect width="20" height="8" x="2" y="2" rx="2" ry="2"/><rect width="20" height="8" x="2" y="14" rx="2" ry="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/></svg>
+          <span data-i18n="servers">Servers</span>
+        </div>
+
+        <div class="nav-section-title" data-i18n="instance">Instance</div>
+        <div class="nav-item" data-view="console">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>
+          <span data-i18n="console">Real-Time Console</span>
+        </div>
+        <div class="nav-item" data-view="files">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 8 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
+          <span data-i18n="files">File Manager</span>
+        </div>
+        <div class="nav-item" data-view="plugins">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 2v8"/><path d="m4.93 10.93 4.24 4.24"/><path d="M2 12h8"/><path d="m10.93 19.07 4.24-4.24"/><path d="M12 22v-8"/><path d="m19.07 13.07-4.24-4.24"/><path d="M22 12h-8"/><path d="m13.07 4.93-4.24 4.24"/></svg>
+          <span data-i18n="plugins">Installed Plugins</span>
+        </div>
+        <div class="nav-item" data-view="modrinth">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"/><path d="m10 15 5-3-5-3v6Z"/></svg>
+          <span data-i18n="modrinth">Modrinth Store</span>
+        </div>
+        <div class="nav-item" data-view="backups">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+          <span data-i18n="backups">Backups & Recovery</span>
+        </div>
+        <div class="nav-item" data-view="monitoring">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          <span data-i18n="monitoring">Monitoring</span>
+        </div>
+
+        <div class="nav-section-title" data-i18n="administration">Administration</div>
+        <div class="nav-item" data-view="users">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          <span data-i18n="usersAndRoles">Users & Roles</span>
+        </div>
+        <div class="nav-item" data-view="audit">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+          <span data-i18n="auditLogs">Audit Logs</span>
+        </div>
+        <div class="nav-item" data-view="settings">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+          <span data-i18n="settings">Settings & Diagnostics</span>
+        </div>
+      </nav>
+
+      <!-- Sidebar Footer with Language Switcher -->
+      <div style="padding:10px 16px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--bg-page);">
+        <label for="lang-switcher" style="font-size:11px;font-weight:600;color:var(--text-muted);display:flex;align-items:center;gap:6px;">
+          <svg style="width:14px;height:14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          <span data-i18n="language">Language</span>
+        </label>
+        <select id="lang-switcher" class="form-select" style="width:auto;padding:3px 8px;font-size:11px;font-weight:600;">
+          <option value="en">English</option>
+          <option value="pt">Português</option>
+        </select>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="user-pill">
+          <div id="user-avatar" class="user-avatar">AD</div>
+          <div class="user-meta">
+            <span id="user-displayname" class="user-name">Administrator</span>
+            <span id="user-rolename" class="user-role">admin</span>
+          </div>
+        </div>
+        <button id="btn-logout" class="btn btn-icon" title="Sign Out">
+          <svg style="width:18px;height:18px;" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="app-main">
+      <!-- Top Header -->
+      <header class="app-header">
+        <div class="header-title-wrap">
+          <h2 id="page-title" class="header-title">Dashboard</h2>
+          <div id="header-server-status" class="header-server-badge" style="display:none;">
+            <span class="status-dot stopped"></span>
+            <span id="header-server-status-text">STOPPED</span>
+          </div>
+        </div>
+
+        <div class="header-actions">
+          <!-- Quick Server Controls -->
+          <div id="header-quick-controls" style="display:none;align-items:center;gap:6px;">
+            <button id="btn-quick-start" class="btn btn-success btn-sm" data-i18n="start">Start</button>
+            <button id="btn-quick-stop" class="btn btn-secondary btn-sm" data-i18n="stop">Stop</button>
+            <button id="btn-quick-restart" class="btn btn-secondary btn-sm" data-i18n="restart">Restart</button>
+          </div>
+
+          <!-- Active Task Indicator -->
+          <div id="active-tasks-badge" class="badge badge-blue" style="display:none;cursor:pointer;">
+            <span class="status-dot starting"></span>
+            <span id="active-tasks-count">0 tasks active</span>
+          </div>
+        </div>
+      </header>
+
+      <!-- Page Content Root -->
+      <section id="content-root" class="app-content">
+        <!-- Rendered by JS -->
+      </section>
+    </main>
+  </div>
+
+  <!-- Global Modal Host -->
+  <div id="modal-host" style="display:none;"></div>
+
+  <!-- Global Toasts -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- Main ES Module Script -->
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>
