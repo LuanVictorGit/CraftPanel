@@ -16,9 +16,11 @@
 <h3>2. Key Features</h3>
 <ul>
 <li><strong>Single Native Instance:</strong> Directly controls the running Minecraft host instance, eliminating the need for complex multi-node daemons or remote agent setups.</li>
-<li><strong>Interactive Real-Time Console:</strong> High-performance WebSocket terminal with ANSI and Minecraft color code parsing, live log streaming, instant search, toggleable autoscroll, and command execution on the server thread with Folia support.</li>
+<li><strong>Interactive Real-Time Console:</strong> High-performance WebSocket terminal with ANSI and Minecraft color code parsing, CMD-level fidelity, zero-latency log streaming from byte 0, instant search, toggleable autoscroll, and thread-safe command execution with Folia support.</li>
+<li><strong>Dynamic Plugin Loading with Brigadier Sync:</strong> Hot-load, enable, and unload plugins at runtime with automatic Bukkit <code>CommandMap</code> registration, Mojang Brigadier tree rebuild (<code>syncCommands</code>), and client packet updates (<code>updateCommands</code>). Installed plugins run their commands immediately without restarting the server.</li>
 <li><strong>Advanced Syntax-Highlighted File Editor:</strong> Full-featured in-browser code editor featuring synchronized line numbers, search and replace with match counts, Tab key indentation, and syntax highlighting for YAML (<code>config.yml</code>, <code>spigot.yml</code>, <code>paper-global.yml</code>), Properties (<code>server.properties</code>), JSON, and script files.</li>
-<li><strong>Plugin Manager &amp; Modrinth Integration:</strong> Browse, enable, disable, and delete installed plugins with automatic backup preservation. Discover, inspect, and install plugins directly from the official Modrinth API v2 with one click.</li>
+<li><strong>Plugin Manager &amp; Modrinth Integration:</strong> Browse, enable, disable, and delete installed plugins with automatic backup preservation and optional configuration folder deletion. Discover, inspect, and install plugins directly from the official Modrinth API v2 with one click.</li>
+<li><strong>Reactive Server Lifecycle Management:</strong> Dynamic Start, Stop, and Restart controls that react instantly to server state with an animated transition overlay and automatic process recovery.</li>
 <li><strong>Granular Role-Based Access Control (RBAC):</strong> Create and assign user accounts with custom roles (Admin, Server Manager, Operator, Viewer) and fine-grained permissions. Add accounts directly in-game or from console using <code>/craftpanel createuser</code>.</li>
 <li><strong>Real-Time Monitoring &amp; Telemetry:</strong> Live metrics tracking CPU load, JVM memory allocation, free disk space, server uptime, and online player count.</li>
 <li><strong>Integrated Backup Engine:</strong> Create automated or manual ZIP archives of server files with integrity hashing and instant web download.</li>
@@ -153,7 +155,7 @@ monitoring:
 
 <details>
 <summary><strong>Can I install plugins from Modrinth without restarting?</strong></summary>
-<p>Yes. Installing plugins via the Modrinth store downloads the official JAR directly to your <code>plugins/</code> folder. You can load it using your favorite plugin manager or reload command.</p>
+<p>Yes. When installing plugins via Modrinth or uploading local JAR files through the web panel, CraftPanel automatically hot-loads the plugin, registers its commands into Bukkit and Mojang Brigadier, and updates client command packets in real time. Commands become accessible immediately without restarting the server.</p>
 </details>
 
 <details>

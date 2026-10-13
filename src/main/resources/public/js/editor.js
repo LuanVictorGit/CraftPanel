@@ -253,50 +253,120 @@ export class CodeEditor {
     const formattedLines = lines.map(line => {
       const trimmed = line.trimStart();
 
-      // Comment detection
       if (trimmed.startsWith('#') || trimmed.startsWith('//') || trimmed.startsWith(';')) {
         return `<span class="tok-comment">${escapeHtml(line)}</span>`;
       }
 
-      // Section header detection (e.g. [header])
       if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
         return `<span class="tok-section">${escapeHtml(line)}</span>`;
       }
 
-      let parsed = escapeHtml(line);
-
       if (lang === 'yaml') {
-        parsed = parsed.replace(/^(\s*)([a-zA-Z0-9_\-\.\/]+)(:)(\s*)/, (m, indent, key, colon, space) => {
-          return `${indent}<span class="tok-key">${key}</span>${colon}${space}`;
-        });
+        return this.highlightYamlLine(line);
       } else if (lang === 'properties') {
-        parsed = parsed.replace(/^(\s*)([a-zA-Z0-9_\-\.]+)(\s*=)(\s*)/, (m, indent, key, eq, space) => {
-          return `${indent}<span class="tok-key">${key}</span>${eq}${space}`;
-        });
+        return this.highlightPropertiesLine(line);
       } else if (lang === 'json') {
-        parsed = parsed.replace(/"([^"]+)"(\s*:)/g, '<span class="tok-key">"$1"</span>$2');
+        return this.highlightJsonLine(line);
       }
 
-      // Strings in quotes
-      parsed = parsed.replace(/(['"])(.*?)\1/g, '<span class="tok-string">$1$2$1</span>');
-
-      // Booleans & null
-      parsed = parsed.replace(/\b(true|false|null|yes|no|on|off)\b/gi, '<span class="tok-bool">$1</span>');
-
-      // Numbers
-      parsed = parsed.replace(/\b(-?\d+(?:\.\d+)?)\b/g, '<span class="tok-number">$1</span>');
-
-      // Search highlights if any
-      if (this.searchQuery && this.searchQuery.length > 0) {
-        const qEsc = escapeHtml(this.searchQuery);
-        const reg = new RegExp(`(${qEsc.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
-        parsed = parsed.replace(reg, '<mark class="tok-search">$1</mark>');
-      }
-
-      return parsed;
+      return this.highlightGenericLine(line);
     });
 
-    return formattedLines.join('\n');
+    let result = formattedLines.join('\n');
+
+    if (this.searchQuery && this.searchQuery.length > 0) {
+      const qEsc = escapeHtml(this.searchQuery);
+      const reg = new RegExp(`(?![^<]*>)(${qEsc.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+      result = result.replace(reg, '<mark class="tok-search">$1</mark>');
+    }
+
+    return result;
+  }
+
+  highlightYamlLine(line) {
+    let codePart = line;
+    let commentPart = '';
+    const commentIdx = line.indexOf(' #');
+    if (commentIdx !== -1) {
+      codePart = line.substring(0, commentIdx);
+      commentPart = ` <span class="tok-comment">${escapeHtml(line.substring(commentIdx + 1))}</span>`;
+    }
+
+    const match = codePart.match(/^(\s*)([a-zA-Z0-9_\-\.\/]+)(\s*:\s*)(.*)$/);
+    if (match) {
+      const indent = escapeHtml(match[1]);
+      const key = escapeHtml(match[2]);
+      const colon = escapeHtml(match[3]);
+      const val = match[4];
+      return `${indent}<span class="tok-key">${key}</span>${colon}${this.highlightValue(val)}${commentPart}`;
+    }
+
+    const listMatch = codePart.match(/^(\s*-\s+)([a-zA-Z0-9_\-\.\/]+)(\s*:\s*)(.*)$/);
+    if (listMatch) {
+      const bullet = escapeHtml(listMatch[1]);
+      const key = escapeHtml(listMatch[2]);
+      const colon = escapeHtml(listMatch[3]);
+      const val = listMatch[4];
+      return `${bullet}<span class="tok-key">${key}</span>${colon}${this.highlightValue(val)}${commentPart}`;
+    }
+
+    return `${this.highlightValue(codePart)}${commentPart}`;
+  }
+
+  highlightPropertiesLine(line) {
+    let codePart = line;
+    let commentPart = '';
+    const commentIdx = line.search(/\s+[#;]/);
+    if (commentIdx !== -1) {
+      codePart = line.substring(0, commentIdx);
+      commentPart = ` <span class="tok-comment">${escapeHtml(line.substring(commentIdx + 1))}</span>`;
+    }
+
+    const match = codePart.match(/^(\s*)([a-zA-Z0-9_\-\.]+)(\s*=\s*)(.*)$/);
+    if (match) {
+      const indent = escapeHtml(match[1]);
+      const key = escapeHtml(match[2]);
+      const eq = escapeHtml(match[3]);
+      const val = match[4];
+      return `${indent}<span class="tok-key">${key}</span>${eq}${this.highlightValue(val)}${commentPart}`;
+    }
+    return `${this.highlightValue(codePart)}${commentPart}`;
+  }
+
+  highlightJsonLine(line) {
+    const match = line.match(/^(\s*)"([^"]+)"(\s*:\s*)(.*)$/);
+    if (match) {
+      const indent = escapeHtml(match[1]);
+      const key = escapeHtml(match[2]);
+      const colon = escapeHtml(match[3]);
+      const val = match[4];
+      return `${indent}<span class="tok-key">"${key}"</span>${colon}${this.highlightValue(val)}`;
+    }
+    return this.highlightValue(line);
+  }
+
+  highlightGenericLine(line) {
+    return this.highlightValue(line);
+  }
+
+  highlightValue(val) {
+    if (!val) return '';
+    const tokenRegex = /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\b(?:true|false|null|yes|no|on|off)\b|\b-?\d+(?:\.\d+)?\b|[^\s"']+|\s+)/gi;
+    let result = '';
+    let m;
+    while ((m = tokenRegex.exec(val)) !== null) {
+      const token = m[0];
+      if ((token.startsWith('"') && token.endsWith('"')) || (token.startsWith("'") && token.endsWith("'"))) {
+        result += `<span class="tok-string">${escapeHtml(token)}</span>`;
+      } else if (/^(true|false|null|yes|no|on|off)$/i.test(token)) {
+        result += `<span class="tok-bool">${escapeHtml(token)}</span>`;
+      } else if (/^-?\d+(?:\.\d+)?$/.test(token)) {
+        result += `<span class="tok-number">${escapeHtml(token)}</span>`;
+      } else {
+        result += escapeHtml(token);
+      }
+    }
+    return result;
   }
 
   openSearch() {

@@ -101,6 +101,9 @@ class AppState {
     const headerStatus = document.getElementById('header-server-status');
     const headerStatusText = document.getElementById('header-server-status-text');
     const headerStatusDot = document.querySelector('#header-server-status .status-dot');
+    const btnStart = document.getElementById('btn-quick-start');
+    const btnStop = document.getElementById('btn-quick-stop');
+    const btnRestart = document.getElementById('btn-quick-restart');
 
     if (!this.activeServerId) {
       if (quickControls) quickControls.style.display = 'none';
@@ -113,10 +116,66 @@ class AppState {
 
     try {
       const res = await api.get(`/api/servers/${this.activeServerId}/status`);
-      const state = res.status;
-      if (headerStatusText) headerStatusText.innerText = state;
-      if (headerStatusDot) headerStatusDot.className = `status-dot ${state.toLowerCase()}`;
-    } catch (e) {}
+      const st = (res.status || 'UNKNOWN').toUpperCase();
+
+      if (headerStatusText) {
+        headerStatusText.innerText = (st === 'RUNNING') ? 'ONLINE' : (st === 'STOPPED' ? 'OFFLINE' : st);
+      }
+      if (headerStatusDot) {
+        headerStatusDot.className = `status-dot ${st.toLowerCase()}`;
+      }
+
+      if (st === 'RUNNING') {
+        if (btnStart) {
+          btnStart.disabled = true;
+          btnStart.classList.add('btn-disabled');
+          btnStart.title = i18n.t('serverAlreadyRunning');
+        }
+        if (btnStop) {
+          btnStop.disabled = false;
+          btnStop.classList.remove('btn-disabled');
+          btnStop.className = 'btn btn-danger btn-sm';
+          btnStop.title = '';
+        }
+        if (btnRestart) {
+          btnRestart.disabled = false;
+          btnRestart.classList.remove('btn-disabled');
+          btnRestart.className = 'btn btn-secondary btn-sm';
+          btnRestart.title = '';
+        }
+      } else if (st === 'STOPPED' || st === 'CRASHED') {
+        if (btnStart) {
+          btnStart.disabled = false;
+          btnStart.classList.remove('btn-disabled');
+          btnStart.className = 'btn btn-success btn-sm';
+          btnStart.title = '';
+        }
+        if (btnStop) {
+          btnStop.disabled = true;
+          btnStop.classList.add('btn-disabled');
+          btnStop.title = i18n.t('serverAlreadyStopped');
+        }
+        if (btnRestart) {
+          btnRestart.disabled = true;
+          btnRestart.classList.add('btn-disabled');
+          btnRestart.title = i18n.t('serverAlreadyStopped');
+        }
+      } else {
+        if (btnStart) { btnStart.disabled = true; btnStart.classList.add('btn-disabled'); }
+        if (btnStop) { btnStop.disabled = true; btnStop.classList.add('btn-disabled'); }
+        if (btnRestart) { btnRestart.disabled = true; btnRestart.classList.add('btn-disabled'); }
+      }
+    } catch (e) {
+      if (headerStatusText) headerStatusText.innerText = 'OFFLINE';
+      if (headerStatusDot) headerStatusDot.className = 'status-dot stopped';
+      if (btnStart) {
+        btnStart.disabled = false;
+        btnStart.classList.remove('btn-disabled');
+        btnStart.className = 'btn btn-success btn-sm';
+      }
+      if (btnStop) { btnStop.disabled = true; btnStop.classList.add('btn-disabled'); }
+      if (btnRestart) { btnRestart.disabled = true; btnRestart.classList.add('btn-disabled'); }
+    }
   }
 }
 
@@ -282,38 +341,244 @@ async function populateServerSelector() {
   }
 }
 
+let lifecyclePollInterval = null;
+
+function showServerTransitionOverlay(cfg) {
+  let host = document.getElementById('server-lifecycle-host');
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'server-lifecycle-host';
+    document.body.appendChild(host);
+  }
+  host.style.display = 'block';
+
+  let iconHtml = '';
+  let actionsHtml = '';
+
+  if (cfg.status === 'stopping') {
+    iconHtml = `
+      <div class="server-lifecycle-icon-wrap stopping">
+        <svg class="server-lifecycle-spinner" style="width:38px;height:38px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <circle cx="12" cy="12" r="10" stroke-opacity="0.25"/>
+          <path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"/>
+        </svg>
+      </div>
+    `;
+  } else if (cfg.status === 'stopped') {
+    iconHtml = `
+      <div class="server-lifecycle-icon-wrap stopped">
+        <svg style="width:38px;height:38px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <path d="M18.36 6.64a9 9 0 1 1-12.73 0"/>
+          <line x1="12" y1="2" x2="12" y2="12"/>
+        </svg>
+      </div>
+    `;
+    actionsHtml = `
+      <div class="server-lifecycle-actions">
+        <button id="btn-lifecycle-start" class="btn btn-success" style="font-weight:600;padding:8px 20px;">
+          ${i18n.t('startServer')}
+        </button>
+        <button id="btn-lifecycle-close" class="btn btn-secondary" style="padding:8px 16px;">
+          ${i18n.t('close')}
+        </button>
+      </div>
+    `;
+  } else if (cfg.status === 'restarting') {
+    iconHtml = `
+      <div class="server-lifecycle-icon-wrap restarting">
+        <svg class="server-lifecycle-spinner" style="width:38px;height:38px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <polyline points="23 4 23 10 17 10"/>
+          <polyline points="1 20 1 14 7 14"/>
+          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+        </svg>
+      </div>
+    `;
+  } else if (cfg.status === 'starting') {
+    iconHtml = `
+      <div class="server-lifecycle-icon-wrap starting">
+        <svg class="server-lifecycle-spinner" style="width:38px;height:38px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <circle cx="12" cy="12" r="10" stroke-opacity="0.25"/>
+          <path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"/>
+        </svg>
+      </div>
+    `;
+  } else if (cfg.status === 'online') {
+    iconHtml = `
+      <div class="server-lifecycle-icon-wrap starting">
+        <svg style="width:38px;height:38px;color:#10B981;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polyline points="20 6 9 17 4 12"/>
+        </svg>
+      </div>
+    `;
+  }
+
+  host.innerHTML = `
+    <div class="server-lifecycle-overlay">
+      <div class="server-lifecycle-card">
+        ${iconHtml}
+        <div>
+          <h2 class="server-lifecycle-title">${escapeHtml(cfg.title)}</h2>
+          <p class="server-lifecycle-desc">${escapeHtml(cfg.desc || '')}</p>
+        </div>
+        ${actionsHtml}
+      </div>
+    </div>
+  `;
+
+  document.getElementById('btn-lifecycle-start')?.addEventListener('click', () => {
+    executeServerAction('start');
+  });
+  document.getElementById('btn-lifecycle-close')?.addEventListener('click', () => {
+    hideServerTransitionOverlay();
+  });
+}
+
+function hideServerTransitionOverlay() {
+  if (lifecyclePollInterval) {
+    clearInterval(lifecyclePollInterval);
+    lifecyclePollInterval = null;
+  }
+  const host = document.getElementById('server-lifecycle-host');
+  if (host) host.style.display = 'none';
+}
+
+async function executeServerAction(action) {
+  if (lifecyclePollInterval) {
+    clearInterval(lifecyclePollInterval);
+    lifecyclePollInterval = null;
+  }
+
+  const serverId = state.activeServerId || 'local';
+
+  if (action === 'stop') {
+    showServerTransitionOverlay({
+      status: 'stopping',
+      title: i18n.t('serverStoppingTitle'),
+      desc: i18n.t('serverStoppingDesc')
+    });
+
+    try {
+      await api.post(`/api/servers/${serverId}/stop`);
+    } catch (e) {
+      toast.error(e.message);
+    }
+    state.updateHeaderControls();
+
+    let checkCount = 0;
+    lifecyclePollInterval = setInterval(async () => {
+      checkCount++;
+      try {
+        const res = await api.get(`/api/servers/${serverId}/status`);
+        if (res.status === 'STOPPED' || res.status === 'CRASHED') {
+          clearInterval(lifecyclePollInterval);
+          lifecyclePollInterval = null;
+          showServerTransitionOverlay({
+            status: 'stopped',
+            title: i18n.t('serverStoppedTitle'),
+            desc: i18n.t('serverStoppedDesc')
+          });
+          state.updateHeaderControls();
+        }
+      } catch (err) {
+        if (checkCount >= 2) {
+          clearInterval(lifecyclePollInterval);
+          lifecyclePollInterval = null;
+          showServerTransitionOverlay({
+            status: 'stopped',
+            title: i18n.t('serverStoppedTitle'),
+            desc: i18n.t('serverStoppedDesc')
+          });
+          state.updateHeaderControls();
+        }
+      }
+    }, 1500);
+
+  } else if (action === 'restart') {
+    showServerTransitionOverlay({
+      status: 'restarting',
+      title: i18n.t('serverRestartingTitle'),
+      desc: i18n.t('serverRestartingDesc')
+    });
+
+    try {
+      await api.post(`/api/servers/${serverId}/restart`);
+    } catch (e) {
+      toast.error(e.message);
+    }
+    state.updateHeaderControls();
+
+    let waited = 0;
+    lifecyclePollInterval = setInterval(async () => {
+      waited++;
+      if (waited < 3) return;
+      try {
+        const res = await api.get(`/api/servers/${serverId}/status`);
+        if (res.status === 'RUNNING') {
+          clearInterval(lifecyclePollInterval);
+          lifecyclePollInterval = null;
+          showServerTransitionOverlay({
+            status: 'online',
+            title: i18n.t('serverOnlineSuccess'),
+            desc: i18n.t('operationSuccess')
+          });
+          state.updateHeaderControls();
+          setTimeout(() => {
+            hideServerTransitionOverlay();
+            state.navigateTo(state.currentView);
+          }, 900);
+        }
+      } catch (ignored) {}
+    }, 1800);
+
+  } else if (action === 'start') {
+    showServerTransitionOverlay({
+      status: 'starting',
+      title: i18n.t('serverStartingTitle'),
+      desc: i18n.t('serverStartingDesc')
+    });
+
+    try {
+      await api.post(`/api/servers/${serverId}/start`);
+    } catch (e) {
+      toast.error(e.message);
+    }
+    state.updateHeaderControls();
+
+    lifecyclePollInterval = setInterval(async () => {
+      try {
+        const res = await api.get(`/api/servers/${serverId}/status`);
+        if (res.status === 'RUNNING') {
+          clearInterval(lifecyclePollInterval);
+          lifecyclePollInterval = null;
+          showServerTransitionOverlay({
+            status: 'online',
+            title: i18n.t('serverOnlineSuccess'),
+            desc: i18n.t('operationSuccess')
+          });
+          state.updateHeaderControls();
+          setTimeout(() => {
+            hideServerTransitionOverlay();
+            state.navigateTo(state.currentView);
+          }, 900);
+        }
+      } catch (ignored) {}
+    }, 1500);
+  }
+}
+
+state.executeServerAction = executeServerAction;
+
 function setupHeaderQuickControls() {
-  document.getElementById('btn-quick-start')?.addEventListener('click', async () => {
-    if (!state.activeServerId) return;
-    try {
-      await api.post(`/api/servers/${state.activeServerId}/start`);
-      toast.success('Start command sent');
-      state.updateHeaderControls();
-    } catch (e) {
-      toast.error(e.message);
-    }
+  document.getElementById('btn-quick-start')?.addEventListener('click', () => {
+    executeServerAction('start');
   });
 
-  document.getElementById('btn-quick-stop')?.addEventListener('click', async () => {
-    if (!state.activeServerId) return;
-    try {
-      await api.post(`/api/servers/${state.activeServerId}/stop`);
-      toast.info('Graceful stop command sent');
-      state.updateHeaderControls();
-    } catch (e) {
-      toast.error(e.message);
-    }
+  document.getElementById('btn-quick-stop')?.addEventListener('click', () => {
+    executeServerAction('stop');
   });
 
-  document.getElementById('btn-quick-restart')?.addEventListener('click', async () => {
-    if (!state.activeServerId) return;
-    try {
-      await api.post(`/api/servers/${state.activeServerId}/restart`);
-      toast.info('Restart initiated');
-      state.updateHeaderControls();
-    } catch (e) {
-      toast.error(e.message);
-    }
+  document.getElementById('btn-quick-restart')?.addEventListener('click', () => {
+    executeServerAction('restart');
   });
 }
 

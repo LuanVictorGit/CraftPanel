@@ -2,6 +2,7 @@ package br.com.craftpanel.api;
 
 import br.com.craftpanel.monitoring.MonitoringService;
 import br.com.craftpanel.monitoring.ServerMetrics;
+import br.com.craftpanel.monitoring.SparkTelemetry;
 import br.com.craftpanel.servers.MinecraftServer;
 import br.com.craftpanel.servers.ServerService;
 import br.com.craftpanel.users.Permission;
@@ -32,5 +33,14 @@ public class MonitoringController {
 
         ServerMetrics metrics = monitoringService.collectMetrics(server);
         ctx.json(metrics);
+    }
+
+    public void getSparkTelemetry(Context ctx) {
+        String serverId = ctx.pathParam("id");
+        authMiddleware.requireServerPermission(ctx, serverId, Permission.MONITORING_VIEW);
+        MinecraftServer server = serverService.getServer(serverId).orElseThrow(() -> new NotFoundResponse("Server not found"));
+
+        SparkTelemetry telemetry = monitoringService.collectSparkTelemetry(server);
+        ctx.json(telemetry);
     }
 }

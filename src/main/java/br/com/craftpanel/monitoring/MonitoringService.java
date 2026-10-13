@@ -7,7 +7,13 @@ import br.com.craftpanel.servers.MinecraftServer;
 import com.sun.management.OperatingSystemMXBean;
 
 import java.io.File;
+import java.lang.management.GarbageCollectorMXBean;
 import java.lang.management.ManagementFactory;
+import java.lang.management.MemoryMXBean;
+import java.lang.management.MemoryUsage;
+import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -15,6 +21,7 @@ public class MonitoringService {
     private final ProcessManager processManager;
     private final OperatingSystemMXBean osBean;
     private final Map<String, ServerMetrics> latestMetrics = new ConcurrentHashMap<>();
+    private final Map<String, SparkTelemetry> latestSpark = new ConcurrentHashMap<>();
 
     public record SystemMetrics(
             double systemCpuPercent,
@@ -32,6 +39,257 @@ public class MonitoringService {
     public MonitoringService(ProcessManager processManager) {
         this.processManager = processManager;
         this.osBean = (OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
+    }
+
+    public SparkTelemetry collectSparkTelemetry(MinecraftServer server) {
+        long timestamp = System.currentTimeMillis();
+        ServerProcess proc = processManager.getProcess(server.id());
+        ProcessState state = proc != null ? proc.getState() : ProcessState.STOPPED;
+        long uptime = proc != null ? proc.getUptime().toSeconds() : 0;
+
+        double[] tps = getTps();
+        TickMonitor.MsptStats mspt = TickMonitor.getInstance().getStats();
+        SparkTelemetry.TpsInfo tpsInfo = new SparkTelemetry.TpsInfo(
+                Math.round(tps[0] * 100.0) / 100.0,
+                Math.round(tps[1] * 100.0) / 100.0,
+                Math.round(tps[2] * 100.0) / 100.0,
+                mspt.currentMs(),
+                mspt.medianMs(),
+                mspt.p95Ms(),
+                mspt.maxMs()
+        );
+
+        double sysCpu = Math.max(0.0, osBean.getCpuLoad() * 100.0);
+        double procCpu = Math.max(0.0, osBean.getProcessCpuLoad() * 100.0);
+        int cores = osBean.getAvailableProcessors();
+        int threads = Thread.activeCount();
+        SparkTelemetry.CpuInfo cpuInfo = new SparkTelemetry.CpuInfo(
+                Math.round(sysCpu * 10.0) / 10.0,
+                Math.round(procCpu * 10.0) / 10.0,
+                cores,
+                threads
+        );
+
+        MemoryMXBean memBean = ManagementFactory.getMemoryMXBean();
+        MemoryUsage heap = memBean.getHeapMemoryUsage();
+        MemoryUsage nonHeap = memBean.getNonHeapMemoryUsage();
+
+        long heapUsedMb = heap.getUsed() / (1024 * 1024);
+        long heapMaxMb = Math.max(heap.getMax(), heap.getCommitted()) / (1024 * 1024);
+        long heapCommMb = heap.getCommitted() / (1024 * 1024);
+        double heapPct = heapMaxMb > 0 ? (heapUsedMb * 100.0 / heapMaxMb) : 0.0;
+
+        long nonHeapUsedMb = nonHeap.getUsed() / (1024 * 1024);
+        long nonHeapCommMb = nonHeap.getCommitted() / (1024 * 1024);
+
+        long totalRam = osBean.getTotalMemorySize();
+        long freeRam = osBean.getFreeMemorySize();
+        long usedRam = Math.max(0, totalRam - freeRam);
+        double physTotalGb = Math.round((totalRam / (1024.0 * 1024.0 * 1024.0)) * 10.0) / 10.0;
+        double physUsedGb = Math.round((usedRam / (1024.0 * 1024.0 * 1024.0)) * 10.0) / 10.0;
+        double physFreeGb = Math.round((freeRam / (1024.0 * 1024.0 * 1024.0)) * 10.0) / 10.0;
+        double physPct = totalRam > 0 ? (usedRam * 100.0 / totalRam) : 0.0;
+
+        List<SparkTelemetry.GcInfo> gcList = new ArrayList<>();
+        for (GarbageCollectorMXBean gc : ManagementFactory.getGarbageCollectorMXBeans()) {
+            gcList.add(new SparkTelemetry.GcInfo(gc.getName(), gc.getCollectionCount(), gc.getCollectionTime()));
+        }
+
+        SparkTelemetry.MemoryInfo memInfo = new SparkTelemetry.MemoryInfo(
+                heapUsedMb,
+                heapMaxMb,
+                heapCommMb,
+                Math.round(heapPct * 10.0) / 10.0,
+                nonHeapUsedMb,
+                nonHeapCommMb,
+                physUsedGb,
+                physTotalGb,
+                physFreeGb,
+                Math.round(physPct * 10.0) / 10.0,
+                gcList
+        );
+
+        int totalChunks = 0;
+        int totalEntities = 0;
+        int totalPlayers = 0;
+        List<SparkTelemetry.WorldTelemetry> worldList = new ArrayList<>();
+
+        try {
+            Class<?> bukkitClass = Class.forName("org.bukkit.Bukkit");
+            Method getWorldsMethod = bukkitClass.getMethod("getWorlds");
+            List<?> worlds = (List<?>) getWorldsMethod.invoke(null);
+            if (worlds != null) {
+                Class<?> playerClass = Class.forName("org.bukkit.entity.Player");
+                Class<?> livingClass = Class.forName("org.bukkit.entity.LivingEntity");
+                Class<?> itemClass = Class.forName("org.bukkit.entity.Item");
+
+                for (Object w : worlds) {
+                    Method getName = w.getClass().getMethod("getName");
+                    String wName = (String) getName.invoke(w);
+
+                    Method getEnv = w.getClass().getMethod("getEnvironment");
+                    Object env = getEnv.invoke(w);
+                    String envName = env != null ? env.toString() : "NORMAL";
+
+                    Method getChunks = w.getClass().getMethod("getLoadedChunks");
+                    Object[] chunks = (Object[]) getChunks.invoke(w);
+                    int chunkCount = chunks != null ? chunks.length : 0;
+
+                    Method getEntities = w.getClass().getMethod("getEntities");
+                    List<?> entities = (List<?>) getEntities.invoke(w);
+                    int entCount = entities != null ? entities.size() : 0;
+
+                    Method getPlayers = w.getClass().getMethod("getPlayers");
+                    List<?> players = (List<?>) getPlayers.invoke(w);
+                    int playerCount = players != null ? players.size() : 0;
+
+                    int livingCount = 0;
+                    int itemsCount = 0;
+                    int otherCount = 0;
+
+                    if (entities != null) {
+                        for (Object e : entities) {
+                            if (playerClass.isInstance(e)) {
+                            } else if (livingClass.isInstance(e)) {
+                                livingCount++;
+                            } else if (itemClass.isInstance(e)) {
+                                itemsCount++;
+                            } else {
+                                otherCount++;
+                            }
+                        }
+                    }
+
+                    totalChunks += chunkCount;
+                    totalEntities += entCount;
+                    totalPlayers += playerCount;
+
+                    worldList.add(new SparkTelemetry.WorldTelemetry(
+                            wName,
+                            envName,
+                            chunkCount,
+                            entCount,
+                            playerCount,
+                            livingCount,
+                            itemsCount,
+                            otherCount
+                    ));
+                }
+            }
+        } catch (Throwable ignored) {}
+
+        SparkTelemetry.WorldSummary worldsSummary = new SparkTelemetry.WorldSummary(
+                totalChunks,
+                totalEntities,
+                totalPlayers,
+                worldList
+        );
+
+        int plugTotal = 0;
+        int plugEnabled = 0;
+        int plugDisabled = 0;
+        List<SparkTelemetry.PluginTelemetry> plugList = new ArrayList<>();
+
+        try {
+            Class<?> bukkitClass = Class.forName("org.bukkit.Bukkit");
+            Object pm = bukkitClass.getMethod("getPluginManager").invoke(null);
+            Method getPlugins = pm.getClass().getMethod("getPlugins");
+            Object[] plugins = (Object[]) getPlugins.invoke(pm);
+            if (plugins != null) {
+                plugTotal = plugins.length;
+                for (Object p : plugins) {
+                    Method getName = p.getClass().getMethod("getName");
+                    String pName = (String) getName.invoke(p);
+
+                    Method isEnabled = p.getClass().getMethod("isEnabled");
+                    boolean pEnabled = (boolean) isEnabled.invoke(p);
+                    if (pEnabled) plugEnabled++; else plugDisabled++;
+
+                    Method getDesc = p.getClass().getMethod("getDescription");
+                    Object desc = getDesc.invoke(p);
+                    String version = "Unknown";
+                    String author = "Unknown";
+                    String description = "";
+                    if (desc != null) {
+                        Method getVer = desc.getClass().getMethod("getVersion");
+                        version = (String) getVer.invoke(desc);
+
+                        Method getAuthors = desc.getClass().getMethod("getAuthors");
+                        List<?> authors = (List<?>) getAuthors.invoke(desc);
+                        if (authors != null && !authors.isEmpty()) {
+                            author = String.join(", ", authors.stream().map(String::valueOf).toList());
+                        }
+
+                        Method getPluginDesc = desc.getClass().getMethod("getDescription");
+                        description = (String) getPluginDesc.invoke(desc);
+                    }
+
+                    plugList.add(new SparkTelemetry.PluginTelemetry(
+                            pName,
+                            version != null ? version : "",
+                            pEnabled,
+                            author,
+                            description != null ? description : ""
+                    ));
+                }
+            }
+        } catch (Throwable ignored) {}
+
+        SparkTelemetry.PluginSummary pluginsSummary = new SparkTelemetry.PluginSummary(
+                plugTotal,
+                plugEnabled,
+                plugDisabled,
+                plugList
+        );
+
+        String serverSoftware = server.software();
+        String mcVer = server.minecraftVersion();
+        String bukkitVer = "";
+        try {
+            Class<?> bukkitClass = Class.forName("org.bukkit.Bukkit");
+            bukkitVer = (String) bukkitClass.getMethod("getBukkitVersion").invoke(null);
+            serverSoftware = (String) bukkitClass.getMethod("getName").invoke(null);
+        } catch (Throwable ignored) {}
+
+        SparkTelemetry.ServerInfo serverInfo = new SparkTelemetry.ServerInfo(
+                server.name(),
+                state.name(),
+                serverSoftware,
+                mcVer,
+                bukkitVer,
+                System.getProperty("java.version"),
+                System.getProperty("java.vendor"),
+                System.getProperty("os.name"),
+                uptime
+        );
+
+        SparkTelemetry telemetry = new SparkTelemetry(
+                timestamp,
+                serverInfo,
+                tpsInfo,
+                cpuInfo,
+                memInfo,
+                worldsSummary,
+                pluginsSummary
+        );
+
+        latestSpark.put(server.id(), telemetry);
+        return telemetry;
+    }
+
+    private double[] getTps() {
+        try {
+            Class<?> bukkitClass = Class.forName("org.bukkit.Bukkit");
+            try {
+                Method getTps = bukkitClass.getMethod("getTPS");
+                return (double[]) getTps.invoke(null);
+            } catch (NoSuchMethodException e) {
+                Object spigot = bukkitClass.getMethod("spigot").invoke(null);
+                Method getTps = spigot.getClass().getMethod("getTPS");
+                return (double[]) getTps.invoke(spigot);
+            }
+        } catch (Throwable ignored) {}
+        return new double[]{20.0, 20.0, 20.0};
     }
 
     public ServerMetrics collectMetrics(MinecraftServer server) {
@@ -117,5 +375,9 @@ public class MonitoringService {
 
     public ServerMetrics getLatest(String serverId) {
         return latestMetrics.get(serverId);
+    }
+
+    public SparkTelemetry getLatestSpark(String serverId) {
+        return latestSpark.get(serverId);
     }
 }

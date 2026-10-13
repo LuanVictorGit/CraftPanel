@@ -1,5 +1,5 @@
 import { api } from '../api.js';
-import { toast, modal, formatBytes, escapeHtml } from '../ui.js';
+import { toast, modal, formatBytes, escapeHtml, loadingModal } from '../ui.js';
 import { i18n } from '../i18n.js';
 
 export async function renderPlugins(root, state) {
@@ -11,7 +11,7 @@ export async function renderPlugins(root, state) {
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
         <div>
           <h3 style="font-size:18px;font-weight:700;color:var(--text-main);">${i18n.t('pluginManager')}</h3>
-          <p style="font-size:13px;color:var(--text-muted);">Manage installed Bukkit, Spigot, Paper and Folia plugins</p>
+          <p style="font-size:13px;color:var(--text-muted);">${i18n.t('pluginSubtitle')}</p>
         </div>
 
         <div style="display:flex;align-items:center;gap:8px;">
@@ -21,7 +21,7 @@ export async function renderPlugins(root, state) {
           </button>
           <button class="btn btn-secondary btn-sm" id="btn-check-updates">
             <svg style="width:14px;height:14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
-            Check Updates
+            ${i18n.t('checkUpdates')}
           </button>
           <label class="btn btn-secondary btn-sm" style="cursor:pointer;">
             <svg style="width:14px;height:14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
@@ -63,8 +63,8 @@ function renderPluginsTable(serverId, plugins) {
   if (plugins.length === 0) {
     container.innerHTML = `
       <div style="text-align:center;padding:48px;color:var(--text-muted);">
-        <p style="font-weight:600;font-size:15px;margin-bottom:4px;">No plugins installed</p>
-        <p style="font-size:13px;margin-bottom:16px;">Download plugins directly from the Modrinth catalog or upload your own .jar files.</p>
+        <p style="font-weight:600;font-size:15px;margin-bottom:4px;">${i18n.t('noPluginsInstalled')}</p>
+        <p style="font-size:13px;margin-bottom:16px;">${i18n.t('noPluginsDesc')}</p>
         <button class="btn btn-primary" id="btn-empty-install">${i18n.t('installPlugin')}</button>
       </div>
     `;
@@ -77,21 +77,31 @@ function renderPluginsTable(serverId, plugins) {
       <table class="data-table">
         <thead>
           <tr>
-            <th>Status</th>
-            <th>Plugin</th>
-            <th>Version</th>
-            <th>Author</th>
-            <th>File Size</th>
-            <th style="text-align:right;">Actions</th>
+            <th>${i18n.t('status')}</th>
+            <th>${i18n.t('plugin')}</th>
+            <th>${i18n.t('version')}</th>
+            <th>${i18n.t('author')}</th>
+            <th>${i18n.t('fileSize')}</th>
+            <th style="text-align:right;">${i18n.t('actions')}</th>
           </tr>
         </thead>
         <tbody>
           ${plugins.map(p => `
             <tr>
               <td>
-                <span class="badge ${p.enabled ? 'badge-green' : 'badge-amber'}">
-                  ${p.enabled ? i18n.t('enabled') : i18n.t('disabled')}
-                </span>
+                ${p.pendingRestart ? `
+                  <span class="badge badge-amber" title="Installed on disk, requires load or restart">
+                    ${i18n.t('pendingRestart')}
+                  </span>
+                ` : p.enabled ? `
+                  <span class="badge badge-green">
+                    ${i18n.t('enabled')}
+                  </span>
+                ` : `
+                  <span class="badge badge-gray">
+                    ${i18n.t('disabled')}
+                  </span>
+                `}
               </td>
               <td>
                 <div style="display:flex;align-items:center;gap:6px;">
@@ -105,8 +115,13 @@ function renderPluginsTable(serverId, plugins) {
               <td style="color:var(--text-muted);font-size:12px;">${formatBytes(p.sizeBytes)}</td>
               <td style="text-align:right;">
                 <div style="display:inline-flex;gap:6px;">
+                  ${p.pendingRestart ? `
+                    <button class="btn btn-primary btn-sm btn-load-plug" data-file="${p.filename}">
+                      ${i18n.t('loadNow')}
+                    </button>
+                  ` : ''}
                   <button class="btn btn-secondary btn-sm btn-toggle-plug" data-file="${p.filename}">
-                    ${p.enabled ? 'Disable' : 'Enable'}
+                    ${p.enabled ? i18n.t('disable') : i18n.t('enable')}
                   </button>
                   <button class="btn btn-danger btn-sm btn-delete-plug" data-file="${p.filename}">
                     ${i18n.t('delete')}
@@ -120,14 +135,37 @@ function renderPluginsTable(serverId, plugins) {
     </div>
   `;
 
+  container.querySelectorAll('.btn-load-plug').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const filename = btn.dataset.file;
+      btn.disabled = true;
+      loadingModal.show(i18n.t('loadNow'), filename, -1);
+      try {
+        await api.post(`/api/servers/${serverId}/plugins/load`, { filename });
+        loadingModal.update(100, i18n.t('loadedSuccess'));
+        await new Promise(r => setTimeout(r, 400));
+        loadingModal.hide();
+        toast.success(i18n.t('loadedSuccess'));
+        loadPlugins(serverId);
+      } catch (e) {
+        loadingModal.hide();
+        btn.disabled = false;
+        toast.error('Load failed: ' + e.message);
+      }
+    });
+  });
+
   container.querySelectorAll('.btn-toggle-plug').forEach(btn => {
     btn.addEventListener('click', async () => {
       const filename = btn.dataset.file;
+      loadingModal.show(i18n.t('operationInProgress'), filename, -1);
       try {
         await api.post(`/api/servers/${serverId}/plugins/toggle`, { filename });
-        toast.success('Plugin status updated');
+        loadingModal.hide();
+        toast.success(i18n.t('operationSuccess'));
         loadPlugins(serverId);
       } catch (e) {
+        loadingModal.hide();
         toast.error(e.message);
       }
     });
@@ -136,15 +174,51 @@ function renderPluginsTable(serverId, plugins) {
   container.querySelectorAll('.btn-delete-plug').forEach(btn => {
     btn.addEventListener('click', () => {
       const filename = btn.dataset.file;
-      modal.confirm(i18n.t('delete'), `Delete plugin "${filename}"? A backup copy will be preserved in the backups folder.`, async () => {
-        try {
-          await api.delete(`/api/servers/${serverId}/plugins`, { filename });
-          toast.success('Plugin removed with backup');
-          loadPlugins(serverId);
-        } catch (e) {
-          toast.error(e.message);
-        }
-      }, true);
+      modal.open({
+        title: i18n.t('deletePluginTitle'),
+        contentHtml: `
+          <div style="display:flex;flex-direction:column;gap:14px;">
+            <p style="font-size:14px;color:var(--text-main);margin:0;line-height:1.5;">
+              ${i18n.t('deletePluginConfirm')}<br>
+              <strong style="color:var(--accent-rose);">${escapeHtml(filename)}</strong>
+            </p>
+            <div style="padding:12px;background:var(--bg-subtle);border-radius:6px;border:1px solid var(--border);display:flex;align-items:flex-start;gap:10px;">
+              <input type="checkbox" id="chk-delete-plugin-config" style="margin-top:3px;cursor:pointer;width:16px;height:16px;">
+              <label for="chk-delete-plugin-config" style="cursor:pointer;font-size:13px;color:var(--text-main);font-weight:600;">
+                <span>${i18n.t('deletePluginConfigCheckbox')}</span>
+                <span style="display:block;font-size:11px;color:var(--text-muted);font-weight:400;margin-top:2px;">${i18n.t('deletePluginConfigDesc')}</span>
+              </label>
+            </div>
+            <p style="font-size:11px;color:var(--text-muted);margin:0;">
+              ${i18n.t('deletePluginWarning')}
+            </p>
+          </div>
+        `,
+        footerButtons: [
+          { text: i18n.t('cancel'), className: 'btn-secondary', onClick: (close) => close() },
+          {
+            text: i18n.t('delete'),
+            className: 'btn-danger',
+            onClick: async (close) => {
+              const chk = document.getElementById('chk-delete-plugin-config');
+              const deleteConfig = chk ? chk.checked : false;
+              close();
+              loadingModal.show(i18n.t('deletingPlugin'), filename, -1);
+              try {
+                await api.delete(`/api/servers/${serverId}/plugins`, { filename, deleteConfig });
+                loadingModal.update(100, i18n.t('pluginDeletedSuccess'));
+                await new Promise(r => setTimeout(r, 450));
+                loadingModal.hide();
+                toast.success(i18n.t('pluginDeletedSuccess'));
+                loadPlugins(serverId);
+              } catch (e) {
+                loadingModal.hide();
+                toast.error(e.message);
+              }
+            }
+          }
+        ]
+      });
     });
   });
 }
@@ -156,18 +230,18 @@ function openInstallPluginModal(serverId) {
     contentHtml: `
       <div style="display:flex;flex-direction:column;gap:16px;">
         <div style="display:flex;gap:8px;border-bottom:1px solid var(--border);padding-bottom:10px;">
-          <button class="btn btn-sm btn-primary" id="tab-btn-modrinth" style="flex:1;">Modrinth Store</button>
-          <button class="btn btn-sm btn-secondary" id="tab-btn-upload" style="flex:1;">Upload .jar</button>
+          <button class="btn btn-sm btn-primary" id="tab-btn-modrinth" style="flex:1;">${i18n.t('modrinthStore')}</button>
+          <button class="btn btn-sm btn-secondary" id="tab-btn-upload" style="flex:1;">${i18n.t('uploadJar')}</button>
         </div>
 
         <!-- Tab 1: Modrinth Store -->
         <div id="tab-content-modrinth" style="display:flex;flex-direction:column;gap:12px;">
           <div style="display:flex;gap:8px;">
-            <input type="text" id="modal-modrinth-search" class="form-input" placeholder="Search Modrinth (e.g. EssentialsX, LuckPerms, Vault, Chunky)..." style="flex:1;">
-            <button class="btn btn-primary btn-sm" id="modal-btn-search">Search</button>
+            <input type="text" id="modal-modrinth-search" class="form-input" placeholder="${i18n.t('searchPlaceholder')}" style="flex:1;">
+            <button class="btn btn-primary btn-sm" id="modal-btn-search">${i18n.t('search')}</button>
           </div>
           <div id="modal-modrinth-results" style="max-height:360px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding-right:4px;">
-            <div style="text-align:center;padding:24px;color:var(--text-muted);">Type a plugin name or search above</div>
+            <div style="text-align:center;padding:24px;color:var(--text-muted);">${i18n.t('searchPrompt')}</div>
           </div>
         </div>
 
@@ -175,15 +249,15 @@ function openInstallPluginModal(serverId) {
         <div id="tab-content-upload" style="display:none;flex-direction:column;gap:12px;">
           <div id="modal-drop-zone" style="border:2px dashed var(--border);border-radius:8px;padding:36px;text-align:center;cursor:pointer;background:var(--bg-card);">
             <svg style="width:36px;height:36px;color:var(--text-muted);margin:0 auto 10px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            <p style="font-weight:600;font-size:14px;color:var(--text-main);margin-bottom:4px;">Click to select or drag and drop a plugin .jar file</p>
-            <p style="font-size:12px;color:var(--text-muted);">Supports Bukkit, Spigot, Paper and Folia plugins</p>
+            <p style="font-weight:600;font-size:14px;color:var(--text-main);margin-bottom:4px;">${i18n.t('dragAndDropJar')}</p>
+            <p style="font-size:12px;color:var(--text-muted);">${i18n.t('supportsJarDesc')}</p>
             <input type="file" id="modal-file-input" accept=".jar" style="display:none;">
           </div>
         </div>
       </div>
     `,
     footerButtons: [
-      { text: 'Close', className: 'btn-secondary', onClick: (close) => close() }
+      { text: i18n.t('close'), className: 'btn-secondary', onClick: (close) => close() }
     ]
   });
 
@@ -213,7 +287,7 @@ function openInstallPluginModal(serverId) {
 
   const performModalSearch = async (query) => {
     if (!resultsContainer) return;
-    resultsContainer.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text-muted);">Searching Modrinth...</div>';
+    resultsContainer.innerHTML = `<div style="text-align:center;padding:24px;color:var(--text-muted);">${i18n.t('searchingModrinth')}</div>`;
     try {
       const res = await api.get('/api/modrinth/search', {
         query: query || undefined,
@@ -221,7 +295,7 @@ function openInstallPluginModal(serverId) {
       });
       const hits = res.hits || [];
       if (hits.length === 0) {
-        resultsContainer.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text-muted);">No plugins found for this search.</div>';
+        resultsContainer.innerHTML = `<div style="text-align:center;padding:24px;color:var(--text-muted);">${i18n.t('noPluginsFound')}</div>`;
         return;
       }
       resultsContainer.innerHTML = hits.map(hit => {
@@ -248,11 +322,11 @@ function openInstallPluginModal(serverId) {
           </div>
           <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
             <a href="${pageUrl}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" style="text-decoration:none;display:inline-flex;align-items:center;gap:4px;" title="View plugin details on Modrinth">
-              <span>View</span>
+              <span>${i18n.t('view')}</span>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
             </a>
             <button class="btn btn-primary btn-sm btn-modal-install" data-project="${escapeHtml(projId)}" data-name="${escapeHtml(hit.title)}">
-              Install
+              ${i18n.t('install')}
             </button>
           </div>
         </div>
@@ -264,13 +338,13 @@ function openInstallPluginModal(serverId) {
           const projId = btn.dataset.project;
           const projName = btn.dataset.name;
           btn.disabled = true;
-          btn.innerText = 'Installing...';
+          loadingModal.show(i18n.t('downloadingAndInstalling'), projName, 10);
           try {
             const versions = await api.get(`/api/modrinth/project/${projId}/versions`, { serverId });
             if (!versions || versions.length === 0) {
-              toast.error('No compatible versions found');
+              loadingModal.hide();
               btn.disabled = false;
-              btn.innerText = 'Install';
+              toast.error('No compatible versions found');
               return;
             }
             const selectedEntry = versions.find(v => {
@@ -285,13 +359,13 @@ function openInstallPluginModal(serverId) {
             const files = chosenVer.files || [];
             const primaryFile = files.find(f => f.primary) || files.find(f => f.filename && f.filename.endsWith('.jar')) || files[0];
             if (!primaryFile || !primaryFile.url) {
-              toast.error('No downloadable file in release');
+              loadingModal.hide();
               btn.disabled = false;
-              btn.innerText = 'Install';
+              toast.error('No downloadable file in release');
               return;
             }
 
-            btn.innerText = 'Downloading...';
+            loadingModal.update(25, `${i18n.t('downloadingAndInstalling')} - ${projName}...`);
             const task = await api.post(`/api/servers/${serverId}/modrinth/install`, {
               fileUrl: primaryFile.url,
               filename: primaryFile.filename,
@@ -302,6 +376,7 @@ function openInstallPluginModal(serverId) {
             if (task && task.id) {
               for (let i = 0; i < 40; i++) {
                 await new Promise(r => setTimeout(r, 600));
+                loadingModal.update(Math.min(30 + i * 2.5, 95), `${i18n.t('downloadingAndInstalling')} - ${projName}...`);
                 try {
                   const t = await api.get(`/api/tasks/${task.id}`);
                   if (t.state === 'COMPLETED') {
@@ -317,13 +392,16 @@ function openInstallPluginModal(serverId) {
               }
             }
 
-            btn.innerText = 'Installed!';
+            loadingModal.update(100, i18n.t('installedSuccess'));
+            btn.innerText = i18n.t('installed');
             btn.className = 'btn btn-secondary btn-sm';
-            toast.success(`${projName} installed successfully!`);
+            await new Promise(r => setTimeout(r, 450));
+            loadingModal.hide();
+            toast.success(`${projName} ${i18n.t('installedSuccess')}`);
             loadPlugins(serverId);
           } catch (err) {
+            loadingModal.hide();
             btn.disabled = false;
-            btn.innerText = 'Install';
             toast.error('Install failed: ' + err.message);
           }
         });
@@ -344,12 +422,16 @@ function openInstallPluginModal(serverId) {
     if (!file) return;
     const formData = new FormData();
     formData.append('file', file);
-    toast.info(`Uploading ${file.name}...`);
+    loadingModal.show(i18n.t('uploadingAndInstalling'), file.name, -1);
     try {
       await api.upload(`/api/servers/${serverId}/plugins/upload`, formData);
-      toast.success('Plugin installed successfully!');
+      loadingModal.update(100, i18n.t('installedSuccess'));
+      await new Promise(r => setTimeout(r, 450));
+      loadingModal.hide();
+      toast.success(i18n.t('installedSuccess'));
       loadPlugins(serverId);
     } catch (err) {
+      loadingModal.hide();
       toast.error('Upload failed: ' + err.message);
     }
   });
@@ -359,9 +441,10 @@ function openInstallPluginModal(serverId) {
 }
 
 async function checkPluginUpdates(serverId) {
-  toast.info('Checking for plugin updates on Modrinth...');
+  loadingModal.show(i18n.t('checkUpdates'), i18n.t('pleaseWait'), -1);
   try {
     const res = await api.post(`/api/servers/${serverId}/modrinth/check-updates`);
+    loadingModal.hide();
     const updates = Array.isArray(res) ? res.filter(r => r.hasUpdate) : (res.updates || []);
     if (updates.length === 0) {
       toast.success('All installed plugins are up to date!');
@@ -370,6 +453,7 @@ async function checkPluginUpdates(serverId) {
       loadPlugins(serverId);
     }
   } catch (e) {
+    loadingModal.hide();
     toast.error('Check updates failed: ' + e.message);
   }
 }
@@ -381,12 +465,16 @@ async function handlePluginUpload(event, serverId) {
   const formData = new FormData();
   formData.append('file', file);
 
-  toast.info(`Uploading ${file.name}...`);
+  loadingModal.show(i18n.t('uploadingAndInstalling'), file.name, -1);
   try {
     await api.upload(`/api/servers/${serverId}/plugins/upload`, formData);
-    toast.success('Plugin installed successfully');
+    loadingModal.update(100, i18n.t('installedSuccess'));
+    await new Promise(r => setTimeout(r, 450));
+    loadingModal.hide();
+    toast.success(i18n.t('installedSuccess'));
     loadPlugins(serverId);
   } catch (e) {
+    loadingModal.hide();
     toast.error('Plugin upload failed: ' + e.message);
   }
 }

@@ -1,6 +1,7 @@
 package br.com.craftpanel.processes;
 
 import br.com.craftpanel.CraftPanelPlugin;
+import br.com.craftpanel.console.ConsoleCapture;
 import br.com.craftpanel.servers.MinecraftServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,7 +19,9 @@ import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
@@ -39,6 +42,7 @@ public class ServerProcess {
     private final MinecraftServer server;
     private final ConsoleBuffer buffer;
     private final List<Listener> listeners = new CopyOnWriteArrayList<>();
+    private final Deque<String> recentLineHashes = new ArrayDeque<>(512);
     private final boolean isHostInstance;
 
     private volatile Process process;
@@ -54,14 +58,32 @@ public class ServerProcess {
 
     public ServerProcess(MinecraftServer server, boolean isHostInstance) {
         this.server = server;
-        this.buffer = new ConsoleBuffer(1500);
+        this.buffer = new ConsoleBuffer(10000);
         this.isHostInstance = isHostInstance;
 
         if (isHostInstance) {
             this.state = ProcessState.RUNNING;
             this.startedAt = Instant.now();
             startLogTailer();
+            ConsoleCapture.install(this::onConsoleOutput);
         }
+    }
+
+    public synchronized void onConsoleOutput(String line) {
+        if (line == null) return;
+        String trimmed = line.trim();
+        if (!trimmed.isEmpty()) {
+            if (recentLineHashes.contains(trimmed)) {
+                return;
+            }
+            if (recentLineHashes.size() >= 500) {
+                recentLineHashes.removeFirst();
+            }
+            recentLineHashes.addLast(trimmed);
+        }
+        ConsoleLine cl = new ConsoleLine(line, Instant.now(), detectLevel(line));
+        buffer.add(cl);
+        notifyLine(cl);
     }
 
     private void startLogTailer() {
@@ -75,7 +97,7 @@ public class ServerProcess {
             if (logFile.exists()) {
                 try (RandomAccessFile raf = new RandomAccessFile(logFile, "r")) {
                     long len = raf.length();
-                    long seekPos = Math.max(0, len - 65536);
+                    long seekPos = Math.max(0, len - 10485760);
                     raf.seek(seekPos);
                     if (seekPos > 0) {
                         int ch;
@@ -90,10 +112,15 @@ public class ServerProcess {
                         if (b == '\n') {
                             byte[] bytes = lineBuf.toByteArray();
                             lineBuf.reset();
-                            String raw = new String(bytes, StandardCharsets.UTF_8).replace("\r", "").trim();
-                            if (!raw.isBlank()) {
-                                buffer.add(new ConsoleLine(raw, Instant.now(), detectLevel(raw)));
+                            String raw = new String(bytes, StandardCharsets.UTF_8).replace("\r", "");
+                            String trimmed = raw.trim();
+                            if (!trimmed.isEmpty()) {
+                                if (recentLineHashes.size() >= 500) {
+                                    recentLineHashes.removeFirst();
+                                }
+                                recentLineHashes.addLast(trimmed);
                             }
+                            buffer.add(new ConsoleLine(raw, Instant.now(), detectLevel(raw)));
                             lastPointer = raf.getFilePointer();
                         } else {
                             lineBuf.write(b);
@@ -120,12 +147,8 @@ public class ServerProcess {
                                     if (b == '\n') {
                                         byte[] bytes = lineBuf.toByteArray();
                                         lineBuf.reset();
-                                        String raw = new String(bytes, StandardCharsets.UTF_8).replace("\r", "").trim();
-                                        if (!raw.isBlank()) {
-                                            ConsoleLine cl = new ConsoleLine(raw, Instant.now(), detectLevel(raw));
-                                            buffer.add(cl);
-                                            notifyLine(cl);
-                                        }
+                                        String raw = new String(bytes, StandardCharsets.UTF_8).replace("\r", "");
+                                        onConsoleOutput(raw);
                                         lastPointer = raf.getFilePointer();
                                     } else {
                                         lineBuf.write(b);
@@ -306,6 +329,7 @@ public class ServerProcess {
     }
 
     public synchronized void stop(int timeoutSeconds) {
+        setState(ProcessState.STOPPING);
         if (isHostInstance) {
             CraftPanelPlugin plugin = CraftPanelPlugin.getInstance();
             if (plugin != null && plugin.isEnabled()) {
@@ -318,7 +342,6 @@ public class ServerProcess {
             return;
         }
 
-        setState(ProcessState.STOPPING);
         try {
             if (stdinWriter != null) {
                 stdinWriter.write("stop");
@@ -364,6 +387,7 @@ public class ServerProcess {
     }
 
     public synchronized void restart(int timeoutSeconds) {
+        setState(ProcessState.STOPPING);
         if (isHostInstance) {
             Thread relaunchThread = new Thread(() -> {
                 try {
@@ -432,10 +456,7 @@ public class ServerProcess {
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(proc.getInputStream(), StandardCharsets.UTF_8))) {
             String line;
             while ((line = reader.readLine()) != null) {
-                String level = detectLevel(line);
-                ConsoleLine consoleLine = new ConsoleLine(line, Instant.now(), level);
-                buffer.add(consoleLine);
-                notifyLine(consoleLine);
+                onConsoleOutput(line);
 
                 if (state == ProcessState.STARTING && READY_PATTERN.matcher(line).find()) {
                     setState(ProcessState.RUNNING);

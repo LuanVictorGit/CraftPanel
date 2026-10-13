@@ -1,5 +1,5 @@
 import { api } from '../api.js';
-import { toast, modal, formatBytes, escapeHtml } from '../ui.js';
+import { toast, modal, formatBytes, escapeHtml, loadingModal } from '../ui.js';
 import { i18n } from '../i18n.js';
 
 export async function renderBackups(root, state) {
@@ -107,12 +107,16 @@ function renderBackupsTable(serverId, backups) {
   container.querySelectorAll('.btn-restore-backup').forEach(btn => {
     btn.addEventListener('click', () => {
       const id = btn.dataset.id;
-      modal.confirm('Restore Backup', i18n.t('confirmRestore'), async () => {
+      modal.confirm(i18n.t('restoreBackup'), i18n.t('confirmRestore'), async () => {
+        loadingModal.show(i18n.t('restoreBackup'), i18n.t('pleaseWait'), -1);
         try {
-          toast.info('Starting restore task...');
           await api.post(`/api/servers/${serverId}/backups/${id}/restore`);
-          toast.success('Backup restore task initiated.');
+          loadingModal.update(100, i18n.t('operationSuccess'));
+          await new Promise(r => setTimeout(r, 400));
+          loadingModal.hide();
+          toast.success(i18n.t('operationSuccess'));
         } catch (e) {
+          loadingModal.hide();
           toast.error(e.message);
         }
       }, true);
@@ -130,11 +134,14 @@ function renderBackupsTable(serverId, backups) {
     btn.addEventListener('click', () => {
       const id = btn.dataset.id;
       modal.confirm(i18n.t('delete'), 'Are you sure you want to delete this backup file?', async () => {
+        loadingModal.show(i18n.t('delete'), i18n.t('pleaseWait'), -1);
         try {
           await api.delete(`/api/servers/${serverId}/backups/${id}`);
-          toast.success('Backup deleted');
+          loadingModal.hide();
+          toast.success(i18n.t('operationSuccess'));
           loadBackups(serverId);
         } catch (e) {
+          loadingModal.hide();
           toast.error(e.message);
         }
       }, true);
@@ -158,13 +165,17 @@ function promptCreateBackup(serverId) {
         className: 'btn-primary',
         onClick: async (close) => {
           const notes = document.getElementById('backup-note-input').value.trim();
+          close();
+          loadingModal.show(i18n.t('createBackup'), i18n.t('pleaseWait'), -1);
           try {
-            close();
-            toast.info('Initiating background backup task...');
             await api.post(`/api/servers/${serverId}/backups`, { notes });
-            toast.success('Backup queued. Track progress in the tasks badge.');
-            setTimeout(() => loadBackups(serverId), 3000);
+            loadingModal.update(100, i18n.t('operationSuccess'));
+            await new Promise(r => setTimeout(r, 400));
+            loadingModal.hide();
+            toast.success(i18n.t('operationSuccess'));
+            setTimeout(() => loadBackups(serverId), 1000);
           } catch (e) {
+            loadingModal.hide();
             toast.error(e.message);
           }
         }

@@ -141,6 +141,7 @@ public class ModrinthController {
             message.accept("Baixando artefato oficial do Modrinth...");
             modrinthClient.downloadFile(fileUrl, targetFile, progress, expectedHash);
             message.accept("Plugin instalado e validado com sucesso: " + filename);
+            pluginManager.loadPluginAtRuntime(targetFile.toFile());
         });
 
         auditService.log(user.id(), user.username(), "MODRINTH_INSTALL", "PLUGIN", filename, "Submitted Modrinth install task for " + projectName, ctx.ip(), "SUCCESS");

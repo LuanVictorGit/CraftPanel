@@ -132,16 +132,30 @@ export async function renderConsole(root, state) {
   function formatConsoleMessage(raw) {
     if (!raw) return '';
     let str = escapeHtml(raw);
-    str = str.replace(/\u001b\[0?m/g, '</span>');
-    str = str.replace(/\u001b\[0;31(?:;1)?m/g, '<span style="color:#F87171;">');
-    str = str.replace(/\u001b\[0;32(?:;1)?m/g, '<span style="color:#4ADE80;">');
-    str = str.replace(/\u001b\[0;33(?:;1)?m/g, '<span style="color:#FBBF24;">');
-    str = str.replace(/\u001b\[0;34(?:;1)?m/g, '<span style="color:#60A5FA;">');
-    str = str.replace(/\u001b\[0;35(?:;1)?m/g, '<span style="color:#C084FC;">');
-    str = str.replace(/\u001b\[0;36(?:;1)?m/g, '<span style="color:#38BDF8;">');
-    str = str.replace(/\u001b\[0;37(?:;1)?m/g, '<span style="color:#F1F5F9;">');
-    str = str.replace(/\u001b\[1;30m/g, '<span style="color:#94A3B8;">');
-    str = str.replace(/\u001b\[[0-9;]*m/g, '');
+
+    const ansiColors = {
+      '30': '#1E293B', '31': '#F87171', '32': '#4ADE80', '33': '#FBBF24',
+      '34': '#60A5FA', '35': '#C084FC', '36': '#38BDF8', '37': '#F1F5F9',
+      '90': '#94A3B8', '91': '#FCA5A5', '92': '#86EFAC', '93': '#FDE047',
+      '94': '#93C5FD', '95': '#E879F9', '96': '#67E8F9', '97': '#FFFFFF'
+    };
+
+    let hadAnsi = false;
+    if (str.includes('\u001b[')) {
+      hadAnsi = true;
+      str = str.replace(/\u001b\[0?m/g, '</span>');
+      str = str.replace(/\u001b\[([0-9]+)(?:;([0-9]+))?m/g, (match, p1, p2) => {
+        if (p1 === '0') return '</span>';
+        let code = p2 ? (p1 === '1' ? p2 : p1) : p1;
+        let isBold = p1 === '1' || p2 === '1';
+        let col = ansiColors[code];
+        if (col) {
+          return `<span style="color:${col};${isBold ? 'font-weight:700;' : ''}">`;
+        }
+        return '';
+      });
+      str = str.replace(/\u001b\[[0-9;?]*[a-zA-Z]/g, '');
+    }
 
     const mcColors = {
       '0': '#000000', '1': '#0000AA', '2': '#00AA00', '3': '#00AAAA',
@@ -149,27 +163,95 @@ export async function renderConsole(root, state) {
       '8': '#555555', '9': '#5555FF', 'a': '#55FF55', 'b': '#55FFFF',
       'c': '#FF5555', 'd': '#FF55FF', 'e': '#FFFF55', 'f': '#FFFFFF'
     };
-    str = str.replace(/§([0-9a-f])/gi, (match, code) => {
-      const col = mcColors[code.toLowerCase()] || '#FFFFFF';
-      return `<span style="color:${col};">`;
-    });
-    str = str.replace(/§[rR]/g, '</span>');
-    str = str.replace(/§[l-okL-OK]/g, '');
+    if (str.includes('§')) {
+      str = str.replace(/§([0-9a-f])/gi, (match, code) => {
+        const col = mcColors[code.toLowerCase()] || '#FFFFFF';
+        return `<span style="color:${col};">`;
+      });
+      str = str.replace(/§[rR]/g, '</span>');
+      str = str.replace(/§[l-okL-OK]/g, '');
+    }
+
+    if (str.startsWith('&gt;') || str.startsWith('&gt; ')) {
+      return `<span style="color:#38BDF8;font-weight:700;">&gt;</span> <span style="color:#F8FAFC;font-weight:600;">${str.replace(/^&gt;\s*/, '')}</span>`;
+    }
+
+    if (!hadAnsi) {
+      const logHeaderRegex = /^(\[\d{2}:\d{2}:\d{2}(?:\.\d{3})?\])\s*(\[([^\]\/]+)\/(INFO|WARN|WARNING|ERROR|FATAL|DEBUG|TRACE)\]:?)(.*)$/;
+      const m = str.match(logHeaderRegex);
+      if (m) {
+        const timePart = m[1];
+        const threadName = m[3];
+        const level = m[4];
+        let rest = m[5];
+
+        let levelColor = '#38BDF8';
+        if (level === 'WARN' || level === 'WARNING') levelColor = '#FBBF24';
+        else if (level === 'ERROR' || level === 'FATAL') levelColor = '#F87171';
+        else if (level === 'DEBUG' || level === 'TRACE') levelColor = '#C084FC';
+
+        rest = rest.replace(/(\[([a-zA-Z0-9_\-\.\+]+)\])/g, '<span style="color:#FCD34D;font-weight:600;">$1</span>');
+        rest = rest.replace(/([a-zA-Z0-9_]{3,16})\s+(issued server command:)\s*(\/.*)?/g, (match, pName, issuedText, cmdText) => {
+          return `<span style="color:#4ADE80;font-weight:600;">${pName}</span> <span style="color:#94A3B8;">${issuedText}</span> ${cmdText ? `<span style="color:#38BDF8;font-weight:600;">${cmdText}</span>` : ''}`;
+        });
+        rest = rest.replace(/(&lt;[a-zA-Z0-9_]{3,16}&gt;)/g, '<span style="color:#4ADE80;font-weight:600;">$1</span>');
+
+        return `<span style="color:#64748B;">${timePart}</span> <span style="color:#475569;">[</span><span style="color:#94A3B8;">${threadName}</span><span style="color:#475569;">/</span><span style="color:${levelColor};font-weight:700;">${level}</span><span style="color:#475569;">]:</span>${rest}`;
+      }
+
+      const shortHeaderRegex = /^(\[\d{2}:\d{2}:\d{2}(?:\.\d{3})?\]|\d{2}:\d{2}:\d{2})\s+(\[(INFO|WARN|WARNING|ERROR|FATAL|DEBUG|TRACE)\]:?|(INFO|WARN|WARNING|ERROR|FATAL|DEBUG|TRACE):?)(.*)$/;
+      const sm = str.match(shortHeaderRegex);
+      if (sm) {
+        const timePart = sm[1];
+        const level = sm[3] || sm[4];
+        let rest = sm[5];
+
+        let levelColor = '#38BDF8';
+        if (level === 'WARN' || level === 'WARNING') levelColor = '#FBBF24';
+        else if (level === 'ERROR' || level === 'FATAL') levelColor = '#F87171';
+        else if (level === 'DEBUG' || level === 'TRACE') levelColor = '#C084FC';
+
+        rest = rest.replace(/(\[([a-zA-Z0-9_\-\.\+]+)\])/g, '<span style="color:#FCD34D;font-weight:600;">$1</span>');
+        rest = rest.replace(/([a-zA-Z0-9_]{3,16})\s+(issued server command:)\s*(\/.*)?/g, (match, pName, issuedText, cmdText) => {
+          return `<span style="color:#4ADE80;font-weight:600;">${pName}</span> <span style="color:#94A3B8;">${issuedText}</span> ${cmdText ? `<span style="color:#38BDF8;font-weight:600;">${cmdText}</span>` : ''}`;
+        });
+        rest = rest.replace(/(&lt;[a-zA-Z0-9_]{3,16}&gt;)/g, '<span style="color:#4ADE80;font-weight:600;">$1</span>');
+
+        return `<span style="color:#64748B;">${timePart}</span> <span style="color:${levelColor};font-weight:700;">[${level}]:</span>${rest}`;
+      }
+
+      const stackRegex = /^(\s*at\s+)([a-zA-Z0-9_\.$]+)(\(.*?\))$/;
+      const stMatch = str.match(stackRegex);
+      if (stMatch) {
+        return `<span style="color:#F87171;opacity:0.8;">${stMatch[1]}</span><span style="color:#CBD5E1;">${stMatch[2]}</span><span style="color:#38BDF8;">${stMatch[3]}</span>`;
+      }
+
+      if (str.trimStart().startsWith('Caused by:')) {
+        return `<span style="color:#EF4444;font-weight:700;">${str}</span>`;
+      }
+    }
+
     return str;
   }
 
   function appendLine(lineData) {
     if (!outputArea) return;
+    const rawLine = (lineData && typeof lineData === 'object') ? (lineData.line ?? '') : String(lineData ?? '');
     const div = document.createElement('div');
-    div.className = 'console-line';
 
-    const time = lineData.timestamp ? new Date(lineData.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString();
-    const lvl = (lineData.level || 'info').toLowerCase();
+    let levelClass = 'info';
+    const trimmed = rawLine.trim();
+    const lower = trimmed.toLowerCase();
+    if (trimmed.startsWith('>')) {
+      levelClass = 'cmd';
+    } else if (lower.includes('/error') || lower.includes('[error') || lower.includes('exception') || lower.includes('fatal') || trimmed.startsWith('at ') || trimmed.startsWith('caused by:')) {
+      levelClass = 'error';
+    } else if (lower.includes('/warn') || lower.includes('[warn')) {
+      levelClass = 'warn';
+    }
 
-    div.innerHTML = `
-      <span class="console-time">${time}</span>
-      <span class="console-msg ${lvl}">${formatConsoleMessage(lineData.line || '')}</span>
-    `;
+    div.className = `console-line ${levelClass}`;
+    div.innerHTML = formatConsoleMessage(rawLine) || '&nbsp;';
 
     outputArea.appendChild(div);
 

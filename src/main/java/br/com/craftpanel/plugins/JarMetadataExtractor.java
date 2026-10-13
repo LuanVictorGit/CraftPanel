@@ -95,6 +95,8 @@ public class JarMetadataExtractor {
                 apiVersion,
                 foliaSupported,
                 enabled,
+                false,
+                false,
                 sizeBytes,
                 dependencies,
                 softDependencies

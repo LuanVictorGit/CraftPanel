@@ -27,6 +27,7 @@ import br.com.craftpanel.modrinth.ModrinthClient;
 import br.com.craftpanel.monitoring.MonitoringService;
 import br.com.craftpanel.monitoring.ServerMetrics;
 import br.com.craftpanel.plugins.PluginManager;
+import br.com.craftpanel.monitoring.MonitoringWebSocketHandler;
 import br.com.craftpanel.processes.ProcessManager;
 import br.com.craftpanel.processes.ProcessState;
 import br.com.craftpanel.processes.ServerProcess;
@@ -65,6 +66,7 @@ public class CraftPanelServer {
     private UserService userService;
     private ServerService serverService;
     private ProcessManager processManager;
+    private MonitoringWebSocketHandler monitoringWs;
     private ScheduledExecutorService scheduler;
     private volatile boolean running = false;
 
@@ -117,6 +119,7 @@ public class CraftPanelServer {
 
         ConsoleWebSocketHandler consoleWs = new ConsoleWebSocketHandler(authService, userService, serverService, processManager);
         EventsWebSocketHandler eventsWs = new EventsWebSocketHandler(authService, userService, taskManager);
+        this.monitoringWs = new MonitoringWebSocketHandler(authService, userService, monitoringService, serverService);
 
         ObjectMapper mapper = new ObjectMapper();
         mapper.registerModule(new JavaTimeModule());
@@ -173,6 +176,7 @@ public class CraftPanelServer {
 
         app.get("/api/servers/{id}/plugins", pluginController::listPlugins);
         app.post("/api/servers/{id}/plugins/toggle", pluginController::togglePlugin);
+        app.post("/api/servers/{id}/plugins/load", pluginController::loadPlugin);
         app.delete("/api/servers/{id}/plugins", pluginController::deletePlugin);
         app.post("/api/servers/{id}/plugins/upload", pluginController::uploadPlugin);
 
@@ -210,6 +214,7 @@ public class CraftPanelServer {
 
         app.get("/api/monitoring/system", monitoringController::getSystemMetrics);
         app.get("/api/servers/{id}/metrics", monitoringController::getServerMetrics);
+        app.get("/api/servers/{id}/monitoring/spark", monitoringController::getSparkTelemetry);
 
         app.get("/api/audit", auditController::list);
 
@@ -218,6 +223,8 @@ public class CraftPanelServer {
 
         app.ws("/ws/console/{serverId}", consoleWs::configure);
         app.ws("/ws/events", eventsWs::configure);
+        app.ws("/ws/monitoring/{serverId}", monitoringWs::configure);
+        app.ws("/ws/monitoring", monitoringWs::configure);
 
         this.scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "craftpanel-monitor");
@@ -279,6 +286,9 @@ public class CraftPanelServer {
         LOGGER.info("Stopping CraftPanel Web server...");
         if (scheduler != null) {
             scheduler.shutdownNow();
+        }
+        if (monitoringWs != null) {
+            monitoringWs.stop();
         }
         if (processManager != null) {
             processManager.shutdownAll();

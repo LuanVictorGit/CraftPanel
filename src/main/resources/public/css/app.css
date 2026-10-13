@@ -473,11 +473,18 @@ button, input, select, textarea {
   border-radius: var(--radius-full);
   display: inline-block;
 }
-.status-dot.running { background-color: var(--accent-emerald); box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.2); }
-.status-dot.starting { background-color: var(--accent-amber); box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.2); }
-.status-dot.stopping { background-color: var(--accent-amber); }
+.status-dot.running { background-color: var(--accent-emerald); box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.25); }
+.status-dot.starting { background-color: var(--accent-amber); box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.25); animation: craftpanel-pulse 1.2s infinite ease-in-out; }
+.status-dot.stopping { background-color: #EA580C; box-shadow: 0 0 0 3px rgba(234, 88, 12, 0.25); animation: craftpanel-pulse 1.2s infinite ease-in-out; }
+.status-dot.restarting { background-color: var(--brand-primary); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25); animation: craftpanel-pulse 1.2s infinite ease-in-out; }
 .status-dot.stopped { background-color: var(--text-subtle); }
-.status-dot.crashed { background-color: var(--accent-rose); box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.2); }
+.status-dot.crashed { background-color: var(--accent-rose); box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.25); }
+
+.btn-disabled, .btn:disabled {
+  opacity: 0.35 !important;
+  cursor: not-allowed !important;
+  pointer-events: none !important;
+}
 
 /* Badges */
 .badge {
@@ -599,26 +606,29 @@ table.data-table tr:hover td {
   flex: 1;
   padding: 14px 16px;
   overflow-y: auto;
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-  line-height: 1.6;
-  color: var(--terminal-text);
+  font-family: 'Consolas', 'Cascadia Code', 'Fira Code', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #E2E8F0;
+  background-color: #080B12;
   white-space: pre-wrap;
-  word-break: break-all;
+  word-break: normal;
+  overflow-wrap: break-word;
 }
 
 .console-line {
-  display: flex;
-  gap: 12px;
+  display: block;
+  min-height: 1.45em;
+  font-family: 'Consolas', 'Cascadia Code', 'Fira Code', 'Courier New', monospace;
+  white-space: pre-wrap;
+  word-break: normal;
+  overflow-wrap: break-word;
+  color: #E2E8F0;
 }
-.console-time {
-  color: #475569;
-  user-select: none;
-  flex-shrink: 0;
-}
-.console-msg.info { color: #E2E8F0; }
-.console-msg.warn { color: #FBBF24; }
-.console-msg.error { color: #F87171; }
+.console-line.info { color: #E2E8F0; }
+.console-line.warn { color: #FBBF24; }
+.console-line.error { color: #F87171; }
+.console-line.cmd { color: #38BDF8; font-weight: 600; }
 
 .console-input-wrap {
   padding: 10px 16px;
@@ -1043,4 +1053,98 @@ table.data-table tr:hover td {
   font-size: 11px;
   color: #94A3B8;
   font-family: var(--font-mono);
+}
+
+/* Server Lifecycle Transition Overlay */
+.server-lifecycle-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(8, 11, 18, 0.88);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 100000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  user-select: none;
+  animation: fadeIn 0.25s ease;
+}
+
+.server-lifecycle-card {
+  background-color: #0F172A;
+  border: 1px solid #334155;
+  border-radius: 16px;
+  padding: 36px 32px;
+  max-width: 480px;
+  width: 100%;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 20px;
+}
+
+.server-lifecycle-icon-wrap {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.server-lifecycle-icon-wrap.stopping {
+  background-color: rgba(234, 88, 12, 0.15);
+  color: #F97316;
+  border: 2px solid rgba(234, 88, 12, 0.3);
+}
+
+.server-lifecycle-icon-wrap.stopped {
+  background-color: rgba(239, 68, 68, 0.15);
+  color: #EF4444;
+  border: 2px solid rgba(239, 68, 68, 0.3);
+}
+
+.server-lifecycle-icon-wrap.restarting {
+  background-color: rgba(37, 99, 235, 0.15);
+  color: #3B82F6;
+  border: 2px solid rgba(37, 99, 235, 0.3);
+}
+
+.server-lifecycle-icon-wrap.starting {
+  background-color: rgba(16, 185, 129, 0.15);
+  color: #10B981;
+  border: 2px solid rgba(16, 185, 129, 0.3);
+}
+
+.server-lifecycle-spinner {
+  animation: craftpanel-spin 1.2s linear infinite;
+}
+
+.server-lifecycle-title {
+  font-size: 19px;
+  font-weight: 700;
+  color: #F8FAFC;
+  margin: 0;
+}
+
+.server-lifecycle-desc {
+  font-size: 13.5px;
+  color: #94A3B8;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.server-lifecycle-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 6px;
+  width: 100%;
+  justify-content: center;
 }

@@ -1,5 +1,5 @@
 import { api } from '../api.js';
-import { toast, modal, formatBytes, escapeHtml } from '../ui.js';
+import { toast, modal, formatBytes, escapeHtml, loadingModal } from '../ui.js';
 import { i18n } from '../i18n.js';
 import { CodeEditor } from '../editor.js';
 
@@ -294,12 +294,16 @@ async function handleUpload(event, serverId) {
   formData.append('file', file);
   formData.append('targetDir', currentPath);
 
-  toast.info(`Uploading ${file.name}...`);
+  loadingModal.show(i18n.t('uploading'), file.name, -1);
   try {
     await api.upload(`/api/servers/${serverId}/files/upload`, formData);
-    toast.success('Upload complete');
+    loadingModal.update(100, i18n.t('operationSuccess'));
+    await new Promise(r => setTimeout(r, 400));
+    loadingModal.hide();
+    toast.success(i18n.t('operationSuccess'));
     loadDirectory(serverId, currentPath);
   } catch (e) {
+    loadingModal.hide();
     toast.error('Upload failed: ' + e.message);
   }
 }

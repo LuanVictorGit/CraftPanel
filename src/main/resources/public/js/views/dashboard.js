@@ -1,5 +1,5 @@
 import { api } from '../api.js';
-import { toast, formatUptime } from '../ui.js';
+import { toast, formatUptime, loadingModal } from '../ui.js';
 import { i18n } from '../i18n.js';
 
 export async function renderDashboard(root, state) {
@@ -146,7 +146,7 @@ async function loadDashboardData(state) {
                 <td style="text-align:right;">
                   <div style="display:inline-flex;gap:6px;">
                     ${s.status === 'RUNNING' ? `
-                      <button class="btn btn-secondary btn-sm btn-action-stop" data-id="${s.id}">${i18n.t('stop')}</button>
+                      <button class="btn btn-danger btn-sm btn-action-stop" data-id="${s.id}">${i18n.t('stop')}</button>
                       <button class="btn btn-secondary btn-sm btn-action-restart" data-id="${s.id}">${i18n.t('restart')}</button>
                     ` : `
                       <button class="btn btn-success btn-sm btn-action-start" data-id="${s.id}">${i18n.t('start')}</button>
@@ -162,40 +162,25 @@ async function loadDashboardData(state) {
     `;
 
     container.querySelectorAll('.btn-action-start').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const id = btn.dataset.id;
-        try {
-          await api.post(`/api/servers/${id}/start`);
-          toast.success('Start command sent');
-          await loadDashboardData(state);
-        } catch (e) {
-          toast.error(e.message);
+      btn.addEventListener('click', () => {
+        if (state.executeServerAction) {
+          state.executeServerAction('start');
         }
       });
     });
 
     container.querySelectorAll('.btn-action-stop').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const id = btn.dataset.id;
-        try {
-          await api.post(`/api/servers/${id}/stop`);
-          toast.info('Graceful shutdown requested');
-          await loadDashboardData(state);
-        } catch (e) {
-          toast.error(e.message);
+      btn.addEventListener('click', () => {
+        if (state.executeServerAction) {
+          state.executeServerAction('stop');
         }
       });
     });
 
     container.querySelectorAll('.btn-action-restart').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const id = btn.dataset.id;
-        try {
-          await api.post(`/api/servers/${id}/restart`);
-          toast.info('Restart requested');
-          await loadDashboardData(state);
-        } catch (e) {
-          toast.error(e.message);
+      btn.addEventListener('click', () => {
+        if (state.executeServerAction) {
+          state.executeServerAction('restart');
         }
       });
     });

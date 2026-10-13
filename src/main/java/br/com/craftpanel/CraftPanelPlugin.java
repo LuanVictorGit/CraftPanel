@@ -2,6 +2,7 @@ package br.com.craftpanel;
 
 import br.com.craftpanel.config.ConfigLoader;
 import br.com.craftpanel.config.PanelConfig;
+import br.com.craftpanel.monitoring.TickMonitor;
 import br.com.craftpanel.users.User;
 import br.com.craftpanel.users.UserService;
 import org.bukkit.ChatColor;
@@ -18,7 +19,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
-public class CraftPanelPlugin extends JavaPlugin implements CommandExecutor, TabCompleter {
+public class CraftPanelPlugin extends JavaPlugin implements CommandExecutor, TabCompleter, org.bukkit.event.Listener {
     private static CraftPanelPlugin instance;
     private Thread serverThread;
 
@@ -55,12 +56,22 @@ public class CraftPanelPlugin extends JavaPlugin implements CommandExecutor, Tab
             cmd.setTabCompleter(this);
         }
 
+        getServer().getPluginManager().registerEvents(this, this);
+        TickMonitor.getInstance().start(this);
+
         getLogger().info("CraftPanel v" + getDescription().getVersion() + " enabled successfully. Author: lHawk_");
         getLogger().info("Web Panel running at http://" + panelConfig.server().host() + ":" + panelConfig.server().port());
     }
 
+    @org.bukkit.event.EventHandler
+    public void onServerLoad(org.bukkit.event.server.ServerLoadEvent event) {
+        TickMonitor.getInstance().start(this);
+    }
+
     @Override
     public void onDisable() {
+        br.com.craftpanel.console.ConsoleCapture.uninstall();
+        TickMonitor.getInstance().stop();
         CraftPanelServer.getInstance().stop();
         if (serverThread != null && serverThread.isAlive()) {
             serverThread.interrupt();

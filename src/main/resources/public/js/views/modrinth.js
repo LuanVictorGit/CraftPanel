@@ -1,5 +1,5 @@
 import { api } from '../api.js';
-import { toast, modal, formatBytes, escapeHtml } from '../ui.js';
+import { toast, modal, formatBytes, escapeHtml, loadingModal } from '../ui.js';
 import { i18n } from '../i18n.js';
 
 export async function renderModrinth(root, state) {
@@ -69,7 +69,7 @@ async function executeSearch(serverId) {
 
   const container = document.getElementById('modrinth-results-container');
   if (container) {
-    container.innerHTML = `<div style="text-align:center;padding:32px;color:var(--text-muted);">Searching official Modrinth database...</div>`;
+    container.innerHTML = `<div style="text-align:center;padding:32px;color:var(--text-muted);">${i18n.t('searchingModrinth')}</div>`;
   }
 
   try {
@@ -93,7 +93,7 @@ function renderModrinthHits(hits, serverId) {
   if (!container) return;
 
   if (hits.length === 0) {
-    container.innerHTML = `<div style="text-align:center;padding:48px;color:var(--text-muted);">No plugin projects found matching your criteria.</div>`;
+    container.innerHTML = `<div style="text-align:center;padding:48px;color:var(--text-muted);">${i18n.t('noPluginsFound')}</div>`;
     return;
   }
 
@@ -156,8 +156,8 @@ function renderModrinthHits(hits, serverId) {
 
 async function openProjectModal(projectId, serverId) {
   modal.open({
-    title: 'Loading Project...',
-    contentHtml: `<div style="text-align:center;padding:32px;">Loading project information...</div>`,
+    title: i18n.t('loadingProjectInfo'),
+    contentHtml: `<div style="text-align:center;padding:32px;">${i18n.t('loadingProjectInfo')}</div>`,
     wide: true
   });
 
@@ -181,21 +181,21 @@ async function openProjectModal(projectId, serverId) {
               </div>
             </div>
             <a href="https://modrinth.com/plugin/${encodeURIComponent(project.slug || project.id)}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" style="text-decoration:none;display:inline-flex;align-items:center;gap:4px;flex-shrink:0;" title="View on Modrinth">
-              <span>View on Modrinth</span>
+              <span>Modrinth</span>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
             </a>
           </div>
 
-          <h4 style="font-size:14px;font-weight:700;margin-top:8px;">Available Versions</h4>
+          <h4 style="font-size:14px;font-weight:700;margin-top:8px;">${i18n.t('allVersions')}</h4>
           <div style="max-height:300px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;">
             <table class="data-table">
               <thead>
                 <tr>
-                  <th>Version</th>
-                  <th>Game Versions</th>
-                  <th>Loaders</th>
-                  <th>Compatibility</th>
-                  <th style="text-align:right;">Action</th>
+                  <th>${i18n.t('version')}</th>
+                  <th>${i18n.t('minecraftVersion')}</th>
+                  <th>${i18n.t('software')}</th>
+                  <th>${i18n.t('compatibility')}</th>
+                  <th style="text-align:right;">${i18n.t('actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -230,7 +230,7 @@ async function openProjectModal(projectId, serverId) {
                             data-filename="${primaryFile.filename}"
                             data-hash="${primaryFile.hashes?.sha512 || primaryFile.hashes?.sha1 || ''}"
                             data-project="${escapeHtml(project.title)}">
-                            Install
+                            ${i18n.t('install')}
                           </button>
                         ` : `<span style="font-size:11px;color:var(--text-subtle);">Select server first</span>`}
                       </td>
@@ -243,7 +243,7 @@ async function openProjectModal(projectId, serverId) {
         </div>
       `,
       footerButtons: [
-        { text: 'Close', className: 'btn-secondary', onClick: (close) => close() }
+        { text: i18n.t('close'), className: 'btn-secondary', onClick: (close) => close() }
       ]
     });
 
@@ -255,10 +255,9 @@ async function openProjectModal(projectId, serverId) {
         const projectName = btn.dataset.project;
 
         btn.disabled = true;
-        btn.innerText = 'Installing...';
+        loadingModal.show(i18n.t('downloadingAndInstalling'), projectName, 10);
 
         try {
-          toast.info(`Downloading ${filename}...`);
           const task = await api.post(`/api/servers/${serverId}/modrinth/install`, {
             fileUrl,
             filename,
@@ -269,6 +268,7 @@ async function openProjectModal(projectId, serverId) {
           if (task && task.id) {
             for (let i = 0; i < 40; i++) {
               await new Promise(r => setTimeout(r, 600));
+              loadingModal.update(Math.min(25 + i * 2.5, 95), `${i18n.t('downloadingAndInstalling')} - ${projectName}...`);
               try {
                 const t = await api.get(`/api/tasks/${task.id}`);
                 if (t.state === 'COMPLETED') {
@@ -284,12 +284,15 @@ async function openProjectModal(projectId, serverId) {
             }
           }
 
-          btn.innerText = 'Installed!';
+          loadingModal.update(100, i18n.t('installedSuccess'));
+          btn.innerText = i18n.t('installed');
           btn.className = 'btn btn-secondary btn-sm';
-          toast.success(`${projectName} installed successfully!`);
+          await new Promise(r => setTimeout(r, 450));
+          loadingModal.hide();
+          toast.success(`${projectName} ${i18n.t('installedSuccess')}`);
         } catch (e) {
+          loadingModal.hide();
           btn.disabled = false;
-          btn.innerText = 'Install';
           toast.error('Install failed: ' + e.message);
         }
       });

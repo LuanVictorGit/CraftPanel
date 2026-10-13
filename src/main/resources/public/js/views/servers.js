@@ -1,5 +1,5 @@
 import { api } from '../api.js';
-import { toast, modal, formatUptime, escapeHtml } from '../ui.js';
+import { toast, modal, formatUptime, escapeHtml, loadingModal } from '../ui.js';
 import { i18n } from '../i18n.js';
 
 export async function renderServers(root, state, params = {}) {
@@ -227,8 +227,8 @@ export function openCreateServerModal(state) {
 
           try {
             close();
-            toast.info('Starting server deployment...');
-            await api.post('/api/installer/install', {
+            loadingModal.show(i18n.t('installing'), name, 10);
+            const task = await api.post('/api/installer/install', {
               name,
               description: desc,
               software,
@@ -240,9 +240,26 @@ export function openCreateServerModal(state) {
               jvmArgs: jvm,
               acceptEula: eula
             });
-            toast.success('Deployment task queued. Check progress in active tasks indicator.');
-            setTimeout(() => loadServersTable(state), 2000);
+            if (task && task.id) {
+              for (let i = 0; i < 40; i++) {
+                await new Promise(r => setTimeout(r, 600));
+                loadingModal.update(Math.min(20 + i * 2.5, 95), `${i18n.t('installing')} - ${name}...`);
+                try {
+                  const t = await api.get(`/api/tasks/${task.id}`);
+                  if (t.state === 'COMPLETED') break;
+                  if (t.state === 'FAILED' || t.state === 'CANCELLED') throw new Error(t.error || t.message || 'Task failed');
+                } catch (pe) {
+                  if (pe.message && (pe.message.includes('failed') || pe.message.includes('mismatch'))) throw pe;
+                }
+              }
+            }
+            loadingModal.update(100, i18n.t('operationSuccess'));
+            await new Promise(r => setTimeout(r, 450));
+            loadingModal.hide();
+            toast.success(i18n.t('operationSuccess'));
+            loadServersTable(state);
           } catch (e) {
+            loadingModal.hide();
             toast.error(e.message);
           }
         }

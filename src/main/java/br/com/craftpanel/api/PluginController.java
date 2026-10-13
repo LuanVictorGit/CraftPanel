@@ -60,6 +60,29 @@ public class PluginController {
         }
     }
 
+    public void loadPlugin(Context ctx) {
+        String serverId = ctx.pathParam("id");
+        authMiddleware.requireServerPermission(ctx, serverId, Permission.PLUGINS_MANAGE);
+        User user = AuthMiddleware.requireUser(ctx);
+        MinecraftServer server = serverService.getServer(serverId).orElseThrow(() -> new NotFoundResponse("Server not found"));
+
+        JsonNode body = ctx.bodyAsClass(JsonNode.class);
+        String filename = body.path("filename").asText(null);
+
+        if (filename == null || filename.isBlank()) {
+            ctx.status(400).json(Map.of("error", "Filename is required"));
+            return;
+        }
+
+        boolean ok = pluginManager.loadPlugin(server, filename);
+        if (ok) {
+            auditService.log(user.id(), user.username(), "PLUGIN_LOAD", "PLUGIN", filename, "Dynamically loaded plugin on server " + server.name(), ctx.ip(), "SUCCESS");
+            ctx.json(Map.of("success", true));
+        } else {
+            ctx.status(400).json(Map.of("error", "Failed to load plugin dynamically. Server restart may be required."));
+        }
+    }
+
     public void deletePlugin(Context ctx) {
         String serverId = ctx.pathParam("id");
         authMiddleware.requireServerPermission(ctx, serverId, Permission.PLUGINS_MANAGE);
@@ -67,14 +90,28 @@ public class PluginController {
         MinecraftServer server = serverService.getServer(serverId).orElseThrow(() -> new NotFoundResponse("Server not found"));
 
         String filename = ctx.queryParam("filename");
+        boolean deleteConfig = "true".equalsIgnoreCase(ctx.queryParam("deleteConfig"));
+
+        if (filename == null || filename.isBlank()) {
+            try {
+                JsonNode body = ctx.bodyAsClass(JsonNode.class);
+                if (body != null && body.has("filename")) {
+                    filename = body.get("filename").asText();
+                }
+                if (body != null && body.has("deleteConfig")) {
+                    deleteConfig = body.get("deleteConfig").asBoolean();
+                }
+            } catch (Exception ignored) {}
+        }
+
         if (filename == null || filename.isBlank()) {
             ctx.status(400).json(Map.of("error", "Filename is required"));
             return;
         }
 
         try {
-            pluginManager.deletePlugin(server, filename);
-            auditService.log(user.id(), user.username(), "PLUGIN_DELETE", "PLUGIN", filename, "Deleted plugin with backup on server " + server.name(), ctx.ip(), "SUCCESS");
+            pluginManager.deletePlugin(server, filename, deleteConfig);
+            auditService.log(user.id(), user.username(), "PLUGIN_DELETE", "PLUGIN", filename, "Deleted plugin with backup on server " + server.name() + " (deleteConfig=" + deleteConfig + ")", ctx.ip(), "SUCCESS");
             ctx.json(Map.of("success", true));
         } catch (Exception e) {
             ctx.status(400).json(Map.of("error", e.getMessage()));
