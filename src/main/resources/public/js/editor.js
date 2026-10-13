@@ -44,9 +44,9 @@ export class CodeEditor {
             <div class="editor-search-wrap" id="editor-search-bar" style="display:none;">
               <input type="text" id="editor-search-input" class="editor-search-input" placeholder="Find in file...">
               <span id="editor-search-count" class="editor-search-count">0/0</span>
-              <button type="button" class="editor-tool-btn" id="editor-search-prev" title="Previous (Shift+F3)">▲</button>
-              <button type="button" class="editor-tool-btn" id="editor-search-next" title="Next (F3)">▼</button>
-              <button type="button" class="editor-tool-btn" id="editor-search-close" title="Close Search (Esc)">✕</button>
+              <button type="button" class="editor-tool-btn" id="editor-search-prev" title="Previous (Shift+F3)"><svg style="width:12px;height:12px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"></polyline></svg></button>
+              <button type="button" class="editor-tool-btn" id="editor-search-next" title="Next (F3)"><svg style="width:12px;height:12px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+              <button type="button" class="editor-tool-btn" id="editor-search-close" title="Close Search (Esc)"><svg style="width:12px;height:12px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
             </div>
 
             <button type="button" class="editor-tool-btn" id="editor-toggle-search" title="Find (Ctrl+F)">
@@ -204,6 +204,9 @@ export class CodeEditor {
     const code = this.textarea.value;
     const highlighted = this.highlightSyntax(code);
     this.highlightCode.innerHTML = highlighted + '\n';
+    if (this.searchQuery && this.searchQuery.length > 0) {
+      this.applySearchHighlight();
+    }
     this.updateGutter();
     this.updateCursorPos();
   }
@@ -272,15 +275,7 @@ export class CodeEditor {
       return this.highlightGenericLine(line);
     });
 
-    let result = formattedLines.join('\n');
-
-    if (this.searchQuery && this.searchQuery.length > 0) {
-      const qEsc = escapeHtml(this.searchQuery);
-      const reg = new RegExp(`(?![^<]*>)(${qEsc.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
-      result = result.replace(reg, '<mark class="tok-search">$1</mark>');
-    }
-
-    return result;
+    return formattedLines.join('\n');
   }
 
   highlightYamlLine(line) {
@@ -420,13 +415,9 @@ export class CodeEditor {
       this.jumpToMatch(0);
     } else {
       this.currentMatchIndex = -1;
+      if (this.searchCount) this.searchCount.innerText = '0/0';
+      this.syncContent();
     }
-
-    if (this.searchCount) {
-      this.searchCount.innerText = `${matches.length > 0 ? this.currentMatchIndex + 1 : 0}/${matches.length}`;
-    }
-
-    this.syncContent();
   }
 
   nextMatch() {
@@ -443,13 +434,65 @@ export class CodeEditor {
 
   jumpToMatch(index) {
     if (index < 0 || index >= this.searchMatches.length) return;
+    this.currentMatchIndex = index;
     const start = this.searchMatches[index];
     const len = this.searchQuery.length;
     this.textarea.focus();
     this.textarea.setSelectionRange(start, start + len);
     this.updateCursorPos();
+
+    const val = this.textarea.value;
+    const lineNum = val.substring(0, start).split('\n').length;
+    const lineHeight = 20;
+    const targetScrollTop = Math.max(0, (lineNum - 5) * lineHeight);
+    this.textarea.scrollTop = targetScrollTop;
+    this.syncScroll();
+
     if (this.searchCount) {
       this.searchCount.innerText = `${index + 1}/${this.searchMatches.length}`;
+    }
+
+    this.syncContent();
+  }
+
+  applySearchHighlight() {
+    if (!this.searchQuery || this.searchQuery.length === 0) return;
+    const qLower = this.searchQuery.toLowerCase();
+    const walker = document.createTreeWalker(this.highlightCode, NodeFilter.SHOW_TEXT, null);
+    const textNodes = [];
+    let node;
+    while ((node = walker.nextNode())) {
+      textNodes.push(node);
+    }
+
+    let matchIdx = 0;
+    for (const textNode of textNodes) {
+      const text = textNode.nodeValue;
+      if (!text) continue;
+      const lower = text.toLowerCase();
+      let idx = lower.indexOf(qLower);
+      if (idx === -1) continue;
+
+      const frag = document.createDocumentFragment();
+      let lastIdx = 0;
+      while (idx !== -1) {
+        if (idx > lastIdx) {
+          frag.appendChild(document.createTextNode(text.substring(lastIdx, idx)));
+        }
+        const mark = document.createElement('mark');
+        const isActive = (matchIdx === this.currentMatchIndex);
+        mark.className = isActive ? 'tok-search tok-search-active' : 'tok-search';
+        mark.textContent = text.substring(idx, idx + this.searchQuery.length);
+        frag.appendChild(mark);
+        matchIdx++;
+
+        lastIdx = idx + this.searchQuery.length;
+        idx = lower.indexOf(qLower, lastIdx);
+      }
+      if (lastIdx < text.length) {
+        frag.appendChild(document.createTextNode(text.substring(lastIdx)));
+      }
+      textNode.parentNode?.replaceChild(frag, textNode);
     }
   }
 

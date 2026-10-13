@@ -12,6 +12,8 @@ import io.javalin.http.Context;
 import io.javalin.http.NotFoundResponse;
 import io.javalin.http.UploadedFile;
 
+import br.com.craftpanel.console.EventsWebSocketHandler;
+
 import java.io.File;
 import java.io.FileInputStream;
 import java.util.List;
@@ -22,12 +24,14 @@ public class FileController {
     private final ServerService serverService;
     private final AuditService auditService;
     private final AuthMiddleware authMiddleware;
+    private final EventsWebSocketHandler eventsWs;
 
-    public FileController(FileManager fileManager, ServerService serverService, AuditService auditService, AuthMiddleware authMiddleware) {
+    public FileController(FileManager fileManager, ServerService serverService, AuditService auditService, AuthMiddleware authMiddleware, EventsWebSocketHandler eventsWs) {
         this.fileManager = fileManager;
         this.serverService = serverService;
         this.auditService = auditService;
         this.authMiddleware = authMiddleware;
+        this.eventsWs = eventsWs;
     }
 
     public void listFiles(Context ctx) {
@@ -85,6 +89,15 @@ public class FileController {
         try {
             fileManager.writeFile(server, path, content);
             auditService.log(user.id(), user.username(), "FILE_WRITE", "FILE", path, "Edited file on server " + server.name(), ctx.ip(), "SUCCESS");
+            if (eventsWs != null) {
+                eventsWs.broadcast("file_change", Map.of(
+                        "serverId", serverId,
+                        "action", "write",
+                        "path", path,
+                        "content", content,
+                        "user", user.username()
+                ));
+            }
             ctx.json(Map.of("success", true));
         } catch (SecurityException e) {
             ctx.status(403).json(Map.of("error", e.getMessage()));
@@ -108,6 +121,13 @@ public class FileController {
 
         try {
             fileManager.createDirectory(server, path);
+            if (eventsWs != null) {
+                eventsWs.broadcast("file_change", Map.of(
+                        "serverId", serverId,
+                        "action", "create_dir",
+                        "path", path
+                ));
+            }
             ctx.json(Map.of("success", true));
         } catch (Exception e) {
             ctx.status(400).json(Map.of("error", e.getMessage()));
@@ -129,6 +149,13 @@ public class FileController {
 
         try {
             fileManager.createFile(server, path);
+            if (eventsWs != null) {
+                eventsWs.broadcast("file_change", Map.of(
+                        "serverId", serverId,
+                        "action", "create",
+                        "path", path
+                ));
+            }
             ctx.json(Map.of("success", true));
         } catch (Exception e) {
             ctx.status(400).json(Map.of("error", e.getMessage()));
@@ -151,6 +178,14 @@ public class FileController {
 
         try {
             fileManager.renameFile(server, path, newName);
+            if (eventsWs != null) {
+                eventsWs.broadcast("file_change", Map.of(
+                        "serverId", serverId,
+                        "action", "rename",
+                        "path", path,
+                        "newName", newName
+                ));
+            }
             ctx.json(Map.of("success", true));
         } catch (Exception e) {
             ctx.status(400).json(Map.of("error", e.getMessage()));
@@ -173,6 +208,14 @@ public class FileController {
 
         try {
             fileManager.moveFile(server, source, targetDir);
+            if (eventsWs != null) {
+                eventsWs.broadcast("file_change", Map.of(
+                        "serverId", serverId,
+                        "action", "move",
+                        "source", source,
+                        "targetDir", targetDir
+                ));
+            }
             ctx.json(Map.of("success", true));
         } catch (Exception e) {
             ctx.status(400).json(Map.of("error", e.getMessage()));
@@ -194,6 +237,14 @@ public class FileController {
         try {
             fileManager.deleteFile(server, path);
             auditService.log(user.id(), user.username(), "FILE_DELETE", "FILE", path, "Deleted file on server " + server.name(), ctx.ip(), "SUCCESS");
+            if (eventsWs != null) {
+                eventsWs.broadcast("file_change", Map.of(
+                        "serverId", serverId,
+                        "action", "delete",
+                        "path", path,
+                        "user", user.username()
+                ));
+            }
             ctx.json(Map.of("success", true));
         } catch (SecurityException e) {
             ctx.status(403).json(Map.of("error", e.getMessage()));
@@ -237,6 +288,14 @@ public class FileController {
 
         try {
             fileManager.saveUploadedFile(server, targetDir != null ? targetDir : "", uploaded.filename(), uploaded.content());
+            if (eventsWs != null) {
+                eventsWs.broadcast("file_change", Map.of(
+                        "serverId", serverId,
+                        "action", "upload",
+                        "targetDir", targetDir != null ? targetDir : "",
+                        "filename", uploaded.filename()
+                ));
+            }
             ctx.json(Map.of("success", true, "filename", uploaded.filename()));
         } catch (Exception e) {
             ctx.status(400).json(Map.of("error", e.getMessage()));

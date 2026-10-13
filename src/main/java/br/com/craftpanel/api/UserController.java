@@ -49,6 +49,14 @@ public class UserController {
 
         try {
             User created = userService.createUser(username, password, displayName, roleId);
+            if (body.has("permissions") && body.get("permissions").isArray()) {
+                List<String> perms = new ArrayList<>();
+                for (JsonNode n : body.get("permissions")) {
+                    perms.add(n.asText());
+                }
+                String serverId = body.path("serverId").asText("local");
+                userService.setServerPermissions(created.id(), serverId, perms);
+            }
             auditService.log(current.id(), current.username(), "USER_CREATE", "USER", created.id(), "Created user " + created.username(), ctx.ip(), "SUCCESS");
             ctx.status(201).json(created);
         } catch (IllegalArgumentException e) {
@@ -119,7 +127,7 @@ public class UserController {
         String userId = ctx.pathParam("id");
         String serverId = ctx.pathParam("serverId");
 
-        Set<String> perms = userService.getServerPermissions(userId, serverId);
+        Set<String> perms = userService.getEffectiveServerPermissions(userId, serverId);
         ctx.json(perms);
     }
 

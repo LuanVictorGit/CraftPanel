@@ -97,10 +97,11 @@
 <li>Download the latest <code>CraftPanel.jar</code> file.</li>
 <li>Place the jar into your server's <code>plugins/</code> folder.</li>
 <li>Start or restart your Minecraft server.</li>
+<li>Notice the console message containing your one-time <strong>Setup Security Key</strong> (e.g. <code>CP-ABCD-1234</code>).</li>
 <li>Open your web browser and navigate to:
-<pre><code>http://127.0.0.1:8080</code></pre>
+<pre><code>http://localhost:2222</code></pre>
 </li>
-<li>On first startup, the panel will prompt you to create the master administrator account.</li>
+<li>Enter the console security key along with your administrator username and password to create the master account.</li>
 <li>Log in and start administering your server!</li>
 </ol>
 
@@ -111,14 +112,14 @@
 <pre><code># Language setting ("en" for English, "pt" for Portuguese)
 language: "en"
 
-# HTTP network binding
+# HTTP network binding (default 0.0.0.0:2222 for immediate remote access)
 server:
-  host: "127.0.0.1"
-  port: 8080
+  host: "0.0.0.0"
+  port: 2222
 
 # Security policy
 security:
-  remote_access_enabled: false
+  remote_access_enabled: true
   session_timeout_minutes: 60
   require_secure_cookies: false
   max_failed_login_attempts: 5
@@ -127,7 +128,7 @@ security:
 # Modrinth official API integration
 modrinth:
   enabled: true
-  user_agent: "CraftPanel-Web/1.2 (contact: lHawk_)"
+  user_agent: "CraftPanel-Web/1.2.2 (contact: minebuilders.com.br/discord)"
   api_url: "https://api.modrinth.com/v2"
 
 # System monitoring
@@ -138,19 +139,27 @@ monitoring:
 
 <h3>7. Performance and Security Architecture</h3>
 <ul>
+<li><strong>Console One-Time Security Key:</strong> On first boot, CraftPanel generates a secure temporary key announced directly to the server console, preventing unauthorized players from claiming the administrator account before you do.</li>
+<li><strong>Bidirectional Real-Time Synchronization:</strong> File modifications and directory changes synchronize instantly across all connected panel users via WebSocket, including open code editor tabs.</li>
+<li><strong>In-Console Command Autocomplete:</strong> Native command suggestion bar and autocomplete matching in-game behavior for effortless command execution.</li>
 <li><strong>Asynchronous Thread Isolation:</strong> The Javalin web server, WebSocket handlers, and SQLite database transactions run strictly on background worker threads, never blocking server ticks.</li>
 <li><strong>Folia-Compatible Scheduling:</strong> Console command dispatching uses Folia's <code>GlobalRegionScheduler</code> when running on Folia, ensuring complete thread safety.</li>
 <li><strong>Path Traversal Defense:</strong> All file reading, writing, renaming, and uploading routines canonicalize paths and verify boundaries to prevent unauthorized filesystem access.</li>
 <li><strong>Argon2 / BCrypt Password Hashing:</strong> User passwords are encrypted using modern cryptographic salt hashing.</li>
-<li><strong>Zero Bloat:</strong> The panel frontend is built with pure vanilla ES6 JavaScript and CSS, requiring no heavy NPM build steps or node dependencies.</li>
+<li><strong>Zero Bloat &amp; Hand-Drawn Vector Icons:</strong> Built with pure vanilla ES6 JavaScript and clean vector SVGs, with zero emojis and zero external frontend dependencies.</li>
 </ul>
 
 <hr>
 
 <h3>8. Frequently Asked Questions (FAQ)</h3>
 <details>
-<summary><strong>How do I allow my friends or staff to access the panel remotely?</strong></summary>
-<p>By default, the panel binds to <code>127.0.0.1</code> for security. To allow remote access, set <code>remote_access_enabled: true</code> and change <code>host: "0.0.0.0"</code> in <code>config.yml</code>, then configure your firewall or port forwarding for port 8080.</p>
+<summary><strong>How do I access the panel remotely?</strong></summary>
+<p>By default, CraftPanel binds to <code>0.0.0.0</code> on port <code>2222</code> with remote access enabled. You can connect from anywhere by typing your server's public IP and port 2222 into your web browser (make sure port 2222 is forwarded in your router or firewall).</p>
+</details>
+
+<details>
+<summary><strong>What is the Console Security Key?</strong></summary>
+<p>When the plugin starts for the first time without an admin account configured, it announces a one-time security key in your server console. This key must be entered on the initial web setup page to verify that you are the legitimate server owner.</p>
 </details>
 
 <details>

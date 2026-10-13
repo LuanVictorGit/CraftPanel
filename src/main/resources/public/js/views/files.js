@@ -4,9 +4,62 @@ import { i18n } from '../i18n.js';
 import { CodeEditor } from '../editor.js';
 
 let currentPath = '';
+let activeServerId = 'local';
+let activeFileEditor = null;
+let isListenerBound = false;
+
+function initFileChangeListener() {
+  if (isListenerBound) return;
+  isListenerBound = true;
+
+  window.addEventListener('craftpanel:file_change', (e) => {
+    const detail = e.detail;
+    if (!detail || detail.serverId !== activeServerId) return;
+
+    const tableContainer = document.getElementById('files-table-container');
+    if (tableContainer) {
+      loadDirectory(activeServerId, currentPath, true);
+    }
+
+    if (activeFileEditor && activeFileEditor.serverId === detail.serverId) {
+      if (detail.action === 'write' && detail.path === activeFileEditor.path) {
+        if (typeof detail.content === 'string') {
+          const currentVal = activeFileEditor.editor.getValue();
+          if (currentVal !== detail.content) {
+            const ta = activeFileEditor.editor.textarea;
+            const start = ta.selectionStart;
+            const end = ta.selectionEnd;
+            const scroll = ta.scrollTop;
+
+            activeFileEditor.editor.setValue(detail.content);
+
+            ta.selectionStart = Math.min(start, detail.content.length);
+            ta.selectionEnd = Math.min(end, detail.content.length);
+            ta.scrollTop = scroll;
+            activeFileEditor.editor.syncScroll();
+
+            const userStr = detail.user ? ` (${detail.user})` : '';
+            toast.info(`${i18n.t('file')} "${detail.path}" ${i18n.t('operationSuccess') || 'updated in real-time'}${userStr}`);
+          }
+        }
+      } else if (detail.action === 'delete' && detail.path === activeFileEditor.path) {
+        toast.error(`"${detail.path}" ${i18n.t('delete') || 'deleted'}${detail.user ? ` (${detail.user})` : ''}`);
+      } else if (detail.action === 'rename' && detail.path === activeFileEditor.path) {
+        activeFileEditor.path = detail.newName;
+        const modalTitle = document.querySelector('.modal-header .card-title');
+        if (modalTitle) {
+          modalTitle.textContent = `${i18n.t('editingFile')}: ${detail.newName}`;
+        }
+        toast.info(`"${detail.path}" -> "${detail.newName}"`);
+      }
+    }
+  });
+}
 
 export async function renderFiles(root, state) {
   const serverId = state.activeServerId || 'local';
+  activeServerId = serverId;
+  initFileChangeListener();
 
   root.innerHTML = `
     <div style="display:flex;flex-direction:column;gap:16px;">
@@ -49,7 +102,7 @@ export async function renderFiles(root, state) {
   await loadDirectory(serverId, '');
 }
 
-async function loadDirectory(serverId, path) {
+async function loadDirectory(serverId, path, silent = false) {
   currentPath = path;
   updateBreadcrumb(serverId, path);
 
@@ -57,7 +110,9 @@ async function loadDirectory(serverId, path) {
     const items = await api.get(`/api/servers/${serverId}/files`, { path });
     renderFileTable(serverId, items);
   } catch (e) {
-    toast.error('Failed to load files: ' + e.message);
+    if (!silent) {
+      toast.error('Failed to load files: ' + e.message);
+    }
   }
 }
 
@@ -176,14 +231,20 @@ async function openFileEditor(serverId, path) {
     const content = res.content || '';
     let editorInstance = null;
 
-    modal.open({
+    const modalRef = modal.open({
       title: `${i18n.t('editingFile')}: ${path}`,
       wide: true,
       contentHtml: `
         <div id="code-editor-mount" style="min-height:520px;"></div>
       `,
+      onClose: () => {
+        activeFileEditor = null;
+      },
       footerButtons: [
-        { text: i18n.t('cancel'), className: 'btn-secondary', onClick: (close) => close() },
+        { text: i18n.t('cancel'), className: 'btn-secondary', onClick: (close) => {
+          activeFileEditor = null;
+          close();
+        }},
         {
           text: i18n.t('saveFile'),
           className: 'btn-primary',
@@ -193,6 +254,7 @@ async function openFileEditor(serverId, path) {
             try {
               await api.post(`/api/servers/${serverId}/files/write`, { path, content: newContent });
               toast.success('File saved successfully');
+              activeFileEditor = null;
               close();
             } catch (e) {
               toast.error(e.message);
@@ -216,6 +278,12 @@ async function openFileEditor(serverId, path) {
           }
         }
       });
+      activeFileEditor = {
+        serverId,
+        path,
+        editor: editorInstance,
+        close: modalRef ? modalRef.close : null
+      };
     }
   } catch (e) {
     toast.error('Could not open file: ' + e.message);

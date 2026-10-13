@@ -12,16 +12,23 @@ import java.lang.management.ManagementFactory;
 import java.lang.management.MemoryMXBean;
 import java.lang.management.MemoryUsage;
 import java.lang.reflect.Method;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class MonitoringService {
+    private static final int MAX_HISTORY_POINTS = 720;
+    private static final long HISTORY_SAMPLE_INTERVAL_MS = 5000L;
+
     private final ProcessManager processManager;
     private final OperatingSystemMXBean osBean;
     private final Map<String, ServerMetrics> latestMetrics = new ConcurrentHashMap<>();
     private final Map<String, SparkTelemetry> latestSpark = new ConcurrentHashMap<>();
+    private final Map<String, Deque<SparkTelemetry.MetricHistoryPoint>> historyMap = new ConcurrentHashMap<>();
+    private final Map<String, Long> lastHistoryTime = new ConcurrentHashMap<>();
 
     public record SystemMetrics(
             double systemCpuPercent,
@@ -109,81 +116,31 @@ public class MonitoringService {
                 gcList
         );
 
-        int totalChunks = 0;
-        int totalEntities = 0;
-        int totalPlayers = 0;
-        List<SparkTelemetry.WorldTelemetry> worldList = new ArrayList<>();
-
-        try {
-            Class<?> bukkitClass = Class.forName("org.bukkit.Bukkit");
-            Method getWorldsMethod = bukkitClass.getMethod("getWorlds");
-            List<?> worlds = (List<?>) getWorldsMethod.invoke(null);
-            if (worlds != null) {
-                Class<?> playerClass = Class.forName("org.bukkit.entity.Player");
-                Class<?> livingClass = Class.forName("org.bukkit.entity.LivingEntity");
-                Class<?> itemClass = Class.forName("org.bukkit.entity.Item");
-
-                for (Object w : worlds) {
-                    Method getName = w.getClass().getMethod("getName");
-                    String wName = (String) getName.invoke(w);
-
-                    Method getEnv = w.getClass().getMethod("getEnvironment");
-                    Object env = getEnv.invoke(w);
-                    String envName = env != null ? env.toString() : "NORMAL";
-
-                    Method getChunks = w.getClass().getMethod("getLoadedChunks");
-                    Object[] chunks = (Object[]) getChunks.invoke(w);
-                    int chunkCount = chunks != null ? chunks.length : 0;
-
-                    Method getEntities = w.getClass().getMethod("getEntities");
-                    List<?> entities = (List<?>) getEntities.invoke(w);
-                    int entCount = entities != null ? entities.size() : 0;
-
-                    Method getPlayers = w.getClass().getMethod("getPlayers");
-                    List<?> players = (List<?>) getPlayers.invoke(w);
-                    int playerCount = players != null ? players.size() : 0;
-
-                    int livingCount = 0;
-                    int itemsCount = 0;
-                    int otherCount = 0;
-
-                    if (entities != null) {
-                        for (Object e : entities) {
-                            if (playerClass.isInstance(e)) {
-                            } else if (livingClass.isInstance(e)) {
-                                livingCount++;
-                            } else if (itemClass.isInstance(e)) {
-                                itemsCount++;
-                            } else {
-                                otherCount++;
-                            }
-                        }
+        SparkTelemetry.WorldSummary worldsSummary = TickMonitor.getInstance().getCachedWorldSummary();
+        if (worldsSummary == null || (worldsSummary.worlds() != null && worldsSummary.worlds().isEmpty())) {
+            try {
+                Class<?> bukkitClass = Class.forName("org.bukkit.Bukkit");
+                List<?> worlds = (List<?>) bukkitClass.getMethod("getWorlds").invoke(null);
+                if (worlds != null && !worlds.isEmpty()) {
+                    List<SparkTelemetry.WorldTelemetry> fallbackList = new ArrayList<>();
+                    int totalChunks = 0;
+                    int totalEntities = 0;
+                    int totalPlayers = 0;
+                    for (Object w : worlds) {
+                        String wName = (String) w.getClass().getMethod("getName").invoke(w);
+                        Object env = w.getClass().getMethod("getEnvironment").invoke(w);
+                        String envName = env != null ? env.toString() : "NORMAL";
+                        int playerCount = ((List<?>) w.getClass().getMethod("getPlayers").invoke(w)).size();
+                        totalPlayers += playerCount;
+                        fallbackList.add(new SparkTelemetry.WorldTelemetry(wName, envName, 0, 0, playerCount, 0, 0, 0));
                     }
-
-                    totalChunks += chunkCount;
-                    totalEntities += entCount;
-                    totalPlayers += playerCount;
-
-                    worldList.add(new SparkTelemetry.WorldTelemetry(
-                            wName,
-                            envName,
-                            chunkCount,
-                            entCount,
-                            playerCount,
-                            livingCount,
-                            itemsCount,
-                            otherCount
-                    ));
+                    worldsSummary = new SparkTelemetry.WorldSummary(totalChunks, totalEntities, totalPlayers, fallbackList);
                 }
-            }
-        } catch (Throwable ignored) {}
-
-        SparkTelemetry.WorldSummary worldsSummary = new SparkTelemetry.WorldSummary(
-                totalChunks,
-                totalEntities,
-                totalPlayers,
-                worldList
-        );
+            } catch (Throwable ignored) {}
+        }
+        if (worldsSummary == null) {
+            worldsSummary = new SparkTelemetry.WorldSummary(0, 0, 0, List.of());
+        }
 
         int plugTotal = 0;
         int plugEnabled = 0;
@@ -197,6 +154,8 @@ public class MonitoringService {
             Object[] plugins = (Object[]) getPlugins.invoke(pm);
             if (plugins != null) {
                 plugTotal = plugins.length;
+                PluginCpuProfiler profiler = PluginCpuProfiler.getInstance();
+
                 for (Object p : plugins) {
                     Method getName = p.getClass().getMethod("getName");
                     String pName = (String) getName.invoke(p);
@@ -224,12 +183,17 @@ public class MonitoringService {
                         description = (String) getPluginDesc.invoke(desc);
                     }
 
+                    PluginCpuProfiler.PluginStats stats = profiler.getStats(pName, procCpu);
+
                     plugList.add(new SparkTelemetry.PluginTelemetry(
                             pName,
                             version != null ? version : "",
                             pEnabled,
                             author,
-                            description != null ? description : ""
+                            description != null ? description : "",
+                            stats.cpuPercent(),
+                            stats.topClass(),
+                            stats.topClassPercent()
                     ));
                 }
             }
@@ -263,6 +227,32 @@ public class MonitoringService {
                 uptime
         );
 
+        Deque<SparkTelemetry.MetricHistoryPoint> historyDeque = historyMap.computeIfAbsent(server.id(), k -> new ArrayDeque<>());
+        long lastSample = lastHistoryTime.getOrDefault(server.id(), 0L);
+        if (timestamp - lastSample >= HISTORY_SAMPLE_INTERVAL_MS || historyDeque.isEmpty()) {
+            SparkTelemetry.MetricHistoryPoint pt = new SparkTelemetry.MetricHistoryPoint(
+                    timestamp,
+                    Math.round(procCpu * 10.0) / 10.0,
+                    Math.round(sysCpu * 10.0) / 10.0,
+                    Math.round(heapPct * 10.0) / 10.0,
+                    Math.round(physPct * 10.0) / 10.0,
+                    Math.round(tps[0] * 100.0) / 100.0,
+                    mspt.currentMs()
+            );
+            synchronized (historyDeque) {
+                if (historyDeque.size() >= MAX_HISTORY_POINTS) {
+                    historyDeque.removeFirst();
+                }
+                historyDeque.addLast(pt);
+            }
+            lastHistoryTime.put(server.id(), timestamp);
+        }
+
+        List<SparkTelemetry.MetricHistoryPoint> historySnapshot;
+        synchronized (historyDeque) {
+            historySnapshot = new ArrayList<>(historyDeque);
+        }
+
         SparkTelemetry telemetry = new SparkTelemetry(
                 timestamp,
                 serverInfo,
@@ -270,11 +260,20 @@ public class MonitoringService {
                 cpuInfo,
                 memInfo,
                 worldsSummary,
-                pluginsSummary
+                pluginsSummary,
+                historySnapshot
         );
 
         latestSpark.put(server.id(), telemetry);
         return telemetry;
+    }
+
+    public List<SparkTelemetry.MetricHistoryPoint> getHistory(String serverId) {
+        Deque<SparkTelemetry.MetricHistoryPoint> deque = historyMap.get(serverId);
+        if (deque == null) return List.of();
+        synchronized (deque) {
+            return new ArrayList<>(deque);
+        }
     }
 
     private double[] getTps() {

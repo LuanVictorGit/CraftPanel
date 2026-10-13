@@ -1,5 +1,5 @@
 import { api } from './api.js';
-import { toast, modal } from './ui.js';
+import { toast, modal, formatUptime } from './ui.js';
 import { i18n } from './i18n.js';
 import { PanelWebSocket } from './websocket.js';
 
@@ -126,6 +126,7 @@ class AppState {
       }
 
       if (st === 'RUNNING') {
+        startHeaderUptime(res.uptimeSeconds || 0);
         if (btnStart) {
           btnStart.disabled = true;
           btnStart.classList.add('btn-disabled');
@@ -144,6 +145,7 @@ class AppState {
           btnRestart.title = '';
         }
       } else if (st === 'STOPPED' || st === 'CRASHED') {
+        stopHeaderUptime();
         if (btnStart) {
           btnStart.disabled = false;
           btnStart.classList.remove('btn-disabled');
@@ -161,11 +163,13 @@ class AppState {
           btnRestart.title = i18n.t('serverAlreadyStopped');
         }
       } else {
+        stopHeaderUptime();
         if (btnStart) { btnStart.disabled = true; btnStart.classList.add('btn-disabled'); }
         if (btnStop) { btnStop.disabled = true; btnStop.classList.add('btn-disabled'); }
         if (btnRestart) { btnRestart.disabled = true; btnRestart.classList.add('btn-disabled'); }
       }
     } catch (e) {
+      stopHeaderUptime();
       if (headerStatusText) headerStatusText.innerText = 'OFFLINE';
       if (headerStatusDot) headerStatusDot.className = 'status-dot stopped';
       if (btnStart) {
@@ -177,6 +181,43 @@ class AppState {
       if (btnRestart) { btnRestart.disabled = true; btnRestart.classList.add('btn-disabled'); }
     }
   }
+}
+
+let headerUptimeTimer = null;
+let currentUptimeSeconds = 0;
+
+function startHeaderUptime(seconds) {
+  currentUptimeSeconds = Math.max(0, parseInt(seconds, 10) || 0);
+  const badge = document.getElementById('header-uptime-badge');
+  const text = document.getElementById('header-uptime-text');
+  if (badge) badge.style.display = 'inline-flex';
+  if (text) text.innerText = `Online: ${formatUptime(currentUptimeSeconds)}`;
+
+  if (headerUptimeTimer) {
+    clearInterval(headerUptimeTimer);
+  }
+  headerUptimeTimer = setInterval(() => {
+    currentUptimeSeconds++;
+    const t = document.getElementById('header-uptime-text');
+    if (t) t.innerText = `Online: ${formatUptime(currentUptimeSeconds)}`;
+  }, 1000);
+}
+
+function stopHeaderUptime() {
+  if (headerUptimeTimer) {
+    clearInterval(headerUptimeTimer);
+    headerUptimeTimer = null;
+  }
+  const badge = document.getElementById('header-uptime-badge');
+  if (badge) badge.style.display = 'none';
+}
+
+export function updateVersionBadge(v) {
+  if (!v) return;
+  const str = v.startsWith('v') ? v : `v${v}`;
+  document.querySelectorAll('.brand-badge, #panel-version-badge').forEach(el => {
+    el.innerText = str;
+  });
 }
 
 const state = new AppState();
@@ -193,13 +234,16 @@ async function bootstrap() {
     });
   }
 
-  window.addEventListener('language:changed', () => {
+  window.addEventListener('languagechange', () => {
     applyTranslations();
     state.navigateTo(state.currentView);
   });
 
   try {
     const setupStatus = await api.get('/api/setup/status');
+    if (setupStatus && setupStatus.version) {
+      updateVersionBadge(setupStatus.version);
+    }
     if (setupStatus.setupRequired) {
       showScreen('setup');
       setupSetupForm();
@@ -208,6 +252,9 @@ async function bootstrap() {
 
     try {
       const auth = await api.get('/api/auth/me');
+      if (auth && auth.version) {
+        updateVersionBadge(auth.version);
+      }
       state.currentUser = auth.user;
       state.currentRole = auth.role;
       state.currentPermissions = auth.permissions;
@@ -240,15 +287,10 @@ function setupSetupForm() {
     const u = document.getElementById('setup-username').value.trim();
     const d = document.getElementById('setup-displayname').value.trim();
     const p1 = document.getElementById('setup-password').value;
-    const p2 = document.getElementById('setup-password-confirm').value;
-
-    if (p1 !== p2) {
-      toast.error('Passwords do not match');
-      return;
-    }
+    const k = document.getElementById('setup-key')?.value.trim();
 
     try {
-      await api.post('/api/setup/first-admin', { username: u, displayName: d, password: p1 });
+      await api.post('/api/setup/first-admin', { username: u, displayName: d, password: p1, setupKey: k });
       toast.success('Administrator account created successfully');
       bootstrap();
     } catch (err) {
@@ -586,6 +628,8 @@ function connectEventsWebSocket() {
   state.eventsWs = new PanelWebSocket('/ws/events', (msg) => {
     if (msg.type === 'task_update') {
       handleTaskUpdate(msg.payload);
+    } else if (msg.type === 'file_change') {
+      window.dispatchEvent(new CustomEvent('craftpanel:file_change', { detail: msg.payload }));
     }
   });
   state.eventsWs.connect();

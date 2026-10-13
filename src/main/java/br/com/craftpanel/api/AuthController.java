@@ -55,7 +55,8 @@ public class AuthController {
             ctx.json(Map.of(
                     "success", true,
                     "token", session.token(),
-                    "user", userOpt.orElse(null)
+                    "user", userOpt.orElse(null),
+                    "version", br.com.craftpanel.CraftPanelVersion.getVersion()
             ));
         } catch (SecurityException e) {
             auditService.log(null, username, "AUTH_LOGIN_FAILED", "USER", username, e.getMessage(), ctx.ip(), "FAILURE");
@@ -87,7 +88,8 @@ public class AuthController {
         ctx.json(Map.of(
                 "user", user,
                 "role", role.orElse(null),
-                "permissions", role.map(Role::permissions).orElse(Collections.emptyList())
+                "permissions", role.map(Role::permissions).orElse(Collections.emptyList()),
+                "version", br.com.craftpanel.CraftPanelVersion.getVersion()
         ));
     }
 

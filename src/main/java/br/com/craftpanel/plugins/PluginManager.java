@@ -2,6 +2,7 @@ package br.com.craftpanel.plugins;
 
 import br.com.craftpanel.CraftPanelPlugin;
 import br.com.craftpanel.config.PanelConfig;
+import br.com.craftpanel.monitoring.PluginCpuProfiler;
 import br.com.craftpanel.servers.MinecraftServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -9,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.net.URLClassLoader;
@@ -17,6 +19,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -134,6 +137,10 @@ public class PluginManager {
     }
 
     public void deletePlugin(MinecraftServer server, String filename, boolean deleteConfig) throws IOException {
+        if (filename != null && (filename.toLowerCase().contains("craftpanel") || filename.equalsIgnoreCase("craftpanel.jar"))) {
+            throw new IllegalArgumentException("CraftPanel is the core system plugin and cannot be deleted.");
+        }
+
         File pluginsDir = getPluginsDir(server);
         File file = new File(pluginsDir, filename);
 
@@ -143,6 +150,9 @@ public class PluginManager {
 
         InstalledPlugin meta = JarMetadataExtractor.extract(file);
         String pluginName = meta != null ? meta.name() : filename.replace(".jar", "");
+        if ("craftpanel".equalsIgnoreCase(pluginName)) {
+            throw new IllegalArgumentException("CraftPanel is the core system plugin and cannot be deleted.");
+        }
 
         unloadPluginAtRuntime(pluginName);
 
@@ -174,7 +184,6 @@ public class PluginManager {
                     deleteMe.deleteOnExit();
                 } else {
                     file.deleteOnExit();
-                    throw new IOException("O arquivo já está sendo usado por outro processo. O plugin foi descarregado e agendado para remoção.");
                 }
             }
         }
@@ -232,6 +241,9 @@ public class PluginManager {
             return false;
         }
 
+        InstalledPlugin meta = JarMetadataExtractor.extract(file);
+        String pluginName = meta != null ? meta.name() : null;
+
         try {
             CraftPanelPlugin pluginInstance = CraftPanelPlugin.getInstance();
             if (pluginInstance == null || !pluginInstance.isEnabled()) {
@@ -243,6 +255,15 @@ public class PluginManager {
                 try {
                     Class<?> bukkitClass = Class.forName("org.bukkit.Bukkit");
                     Object pm = bukkitClass.getMethod("getPluginManager").invoke(null);
+
+                    if (pluginName != null && !pluginName.isBlank()) {
+                        Method getPlugin = pm.getClass().getMethod("getPlugin", String.class);
+                        Object existing = getPlugin.invoke(pm, pluginName);
+                        if (existing != null) {
+                            unloadPluginInternal(existing, pluginName);
+                        }
+                    }
+
                     Method loadPluginMethod = pm.getClass().getMethod("loadPlugin", File.class);
                     Object loaded = loadPluginMethod.invoke(pm, file);
                     if (loaded != null) {
@@ -256,7 +277,8 @@ public class PluginManager {
                         Method enablePlugin = pm.getClass().getMethod("enablePlugin", Class.forName("org.bukkit.plugin.Plugin"));
                         enablePlugin.invoke(pm, loaded);
 
-                        registerPluginCommands(loaded);
+                        rebindPluginCommands(loaded);
+                        PluginCpuProfiler.getInstance().registerPlugin((org.bukkit.plugin.Plugin) loaded);
                         syncServerCommands();
                         future.complete(true);
                     } else {
@@ -368,90 +390,7 @@ public class PluginManager {
                         return;
                     }
 
-                    Class<?> pluginClass = Class.forName("org.bukkit.plugin.Plugin");
-
-                    Method isEnabled = target.getClass().getMethod("isEnabled");
-                    if ((boolean) isEnabled.invoke(target)) {
-                        Method disablePlugin = pm.getClass().getMethod("disablePlugin", pluginClass);
-                        disablePlugin.invoke(pm, target);
-                    }
-
-                    try {
-                        Class<?> handlerListClass = Class.forName("org.bukkit.event.HandlerList");
-                        Method unregisterAll = handlerListClass.getMethod("unregisterAll", pluginClass);
-                        unregisterAll.invoke(null, target);
-                    } catch (Throwable ignored) {}
-
-                    try {
-                        Object scheduler = bukkitClass.getMethod("getScheduler").invoke(null);
-                        Method cancelTasks = scheduler.getClass().getMethod("cancelTasks", pluginClass);
-                        cancelTasks.invoke(scheduler, target);
-                    } catch (Throwable ignored) {}
-
-                    try {
-                        Field pluginsField = pm.getClass().getDeclaredField("plugins");
-                        pluginsField.setAccessible(true);
-                        List<?> plugins = (List<?>) pluginsField.get(pm);
-                        plugins.remove(target);
-                    } catch (Throwable ignored) {}
-
-                    try {
-                        Field lookupNamesField = pm.getClass().getDeclaredField("lookupNames");
-                        lookupNamesField.setAccessible(true);
-                        Map<?, ?> lookupNames = (Map<?, ?>) lookupNamesField.get(pm);
-                        lookupNames.remove(name);
-                        lookupNames.remove(name.toLowerCase());
-                    } catch (Throwable ignored) {}
-
-                    try {
-                        Object serverObj = bukkitClass.getMethod("getServer").invoke(null);
-                        Method getCommandMap = serverObj.getClass().getMethod("getCommandMap");
-                        Object commandMap = getCommandMap.invoke(serverObj);
-                        if (commandMap != null) {
-                            Field knownCommandsField = commandMap.getClass().getDeclaredField("knownCommands");
-                            knownCommandsField.setAccessible(true);
-                            Map<?, ?> knownCommands = (Map<?, ?>) knownCommandsField.get(commandMap);
-                            ClassLoader cl = target.getClass().getClassLoader();
-                            Class<?> picClass = null;
-                            try {
-                                picClass = Class.forName("org.bukkit.command.PluginIdentifiableCommand");
-                            } catch (Throwable ignored) {}
-                            final Class<?> finalPicClass = picClass;
-                            knownCommands.values().removeIf(cmd -> {
-                                try {
-                                    if (cmd == null) return false;
-                                    if (cmd.getClass().getClassLoader() == cl) return true;
-                                    if (finalPicClass != null && finalPicClass.isInstance(cmd)) {
-                                        Method getPluginMethod = cmd.getClass().getMethod("getPlugin");
-                                        return getPluginMethod.invoke(cmd) == target;
-                                    }
-                                    try {
-                                        Method getPluginMethod = cmd.getClass().getMethod("getPlugin");
-                                        return getPluginMethod.invoke(cmd) == target;
-                                    } catch (Throwable ignored) {
-                                        return false;
-                                    }
-                                } catch (Throwable t) {
-                                    return false;
-                                }
-                            });
-                            syncServerCommands();
-                        }
-                    } catch (Throwable ignored) {}
-
-                    ClassLoader classLoader = target.getClass().getClassLoader();
-                    if (classLoader instanceof URLClassLoader urlCl) {
-                        try {
-                            urlCl.close();
-                        } catch (Throwable ignored) {}
-                    } else if (classLoader instanceof AutoCloseable ac) {
-                        try {
-                            ac.close();
-                        } catch (Throwable ignored) {}
-                    }
-
-                    System.gc();
-                    System.runFinalization();
+                    unloadPluginInternal(target, name);
                     future.complete(true);
                 } catch (Throwable t) {
                     LOGGER.error("Failed to unload plugin: " + name, t);
@@ -483,6 +422,122 @@ public class PluginManager {
         }
     }
 
+    private void unloadPluginInternal(Object target, String name) {
+        try {
+            Class<?> bukkitClass = Class.forName("org.bukkit.Bukkit");
+            Object pm = bukkitClass.getMethod("getPluginManager").invoke(null);
+            Class<?> pluginClass = Class.forName("org.bukkit.plugin.Plugin");
+
+            Method isEnabled = target.getClass().getMethod("isEnabled");
+            if ((boolean) isEnabled.invoke(target)) {
+                Method disablePlugin = pm.getClass().getMethod("disablePlugin", pluginClass);
+                disablePlugin.invoke(pm, target);
+            }
+
+            try {
+                Class<?> handlerListClass = Class.forName("org.bukkit.event.HandlerList");
+                Method unregisterAll = handlerListClass.getMethod("unregisterAll", pluginClass);
+                unregisterAll.invoke(null, target);
+            } catch (Throwable ignored) {}
+
+            try {
+                Object scheduler = bukkitClass.getMethod("getScheduler").invoke(null);
+                Method cancelTasks = scheduler.getClass().getMethod("cancelTasks", pluginClass);
+                cancelTasks.invoke(scheduler, target);
+            } catch (Throwable ignored) {}
+
+            try {
+                Field pluginsField = pm.getClass().getDeclaredField("plugins");
+                pluginsField.setAccessible(true);
+                List<?> plugins = (List<?>) pluginsField.get(pm);
+                plugins.remove(target);
+            } catch (Throwable ignored) {}
+
+            try {
+                Field lookupNamesField = pm.getClass().getDeclaredField("lookupNames");
+                lookupNamesField.setAccessible(true);
+                Map<?, ?> lookupNames = (Map<?, ?>) lookupNamesField.get(pm);
+                lookupNames.remove(name);
+                lookupNames.remove(name.toLowerCase());
+            } catch (Throwable ignored) {}
+
+            try {
+                Object serverObj = bukkitClass.getMethod("getServer").invoke(null);
+                Method getCommandMap = serverObj.getClass().getMethod("getCommandMap");
+                Object commandMap = getCommandMap.invoke(serverObj);
+                if (commandMap != null) {
+                    Field knownCommandsField = commandMap.getClass().getDeclaredField("knownCommands");
+                    knownCommandsField.setAccessible(true);
+                    Map<?, ?> knownCommands = (Map<?, ?>) knownCommandsField.get(commandMap);
+                    ClassLoader cl = target.getClass().getClassLoader();
+                    Class<?> picClass = null;
+                    try {
+                        picClass = Class.forName("org.bukkit.command.PluginIdentifiableCommand");
+                    } catch (Throwable ignored) {}
+                    final Class<?> finalPicClass = picClass;
+
+                    List<Object> removedCmds = new ArrayList<>();
+                    Iterator<? extends Map.Entry<?, ?>> it = knownCommands.entrySet().iterator();
+                    while (it.hasNext()) {
+                        Map.Entry<?, ?> entry = it.next();
+                        Object cmd = entry.getValue();
+                        if (cmd == null) continue;
+
+                        boolean match = false;
+                        if (cmd.getClass().getClassLoader() == cl) {
+                            match = true;
+                        } else if (finalPicClass != null && finalPicClass.isInstance(cmd)) {
+                            try {
+                                Method getPluginMethod = cmd.getClass().getMethod("getPlugin");
+                                Object owning = getPluginMethod.invoke(cmd);
+                                if (owning == target || (owning != null && name.equalsIgnoreCase(owning.getClass().getMethod("getName").invoke(owning).toString()))) {
+                                    match = true;
+                                }
+                            } catch (Throwable ignored) {}
+                        } else {
+                            try {
+                                Method getPluginMethod = cmd.getClass().getMethod("getPlugin");
+                                Object owning = getPluginMethod.invoke(cmd);
+                                if (owning == target) {
+                                    match = true;
+                                }
+                            } catch (Throwable ignored) {}
+                        }
+
+                        if (match) {
+                            removedCmds.add(cmd);
+                            it.remove();
+                        }
+                    }
+
+                    Class<?> cmdMapClass = Class.forName("org.bukkit.command.CommandMap");
+                    for (Object cmd : removedCmds) {
+                        try {
+                            cmd.getClass().getMethod("unregister", cmdMapClass).invoke(cmd, commandMap);
+                        } catch (Throwable ignored) {}
+                    }
+                }
+            } catch (Throwable ignored) {}
+
+            ClassLoader classLoader = target.getClass().getClassLoader();
+            if (classLoader instanceof URLClassLoader urlCl) {
+                try {
+                    urlCl.close();
+                } catch (Throwable ignored) {}
+            } else if (classLoader instanceof AutoCloseable ac) {
+                try {
+                    ac.close();
+                } catch (Throwable ignored) {}
+            }
+
+            System.gc();
+            System.runFinalization();
+            syncServerCommands();
+        } catch (Throwable t) {
+            LOGGER.error("Error during internal unload of " + name, t);
+        }
+    }
+
     @SuppressWarnings("unchecked")
     private void registerPluginCommands(Object pluginObj) {
         if (pluginObj == null) {
@@ -497,6 +552,10 @@ public class PluginManager {
                 return;
             }
 
+            Field knownCommandsField = commandMap.getClass().getDeclaredField("knownCommands");
+            knownCommandsField.setAccessible(true);
+            Map<String, Object> knownCommands = (Map<String, Object>) knownCommandsField.get(commandMap);
+
             Method getDesc = pluginObj.getClass().getMethod("getDescription");
             Object desc = getDesc.invoke(pluginObj);
             Method getCommands = desc.getClass().getMethod("getCommands");
@@ -508,10 +567,13 @@ public class PluginManager {
             Method getName = desc.getClass().getMethod("getName");
             String pluginName = (String) getName.invoke(desc);
 
-            Method getCommand = commandMap.getClass().getMethod("getCommand", String.class);
             Class<?> pluginClass = Class.forName("org.bukkit.plugin.Plugin");
             Class<?> pluginCommandClass = Class.forName("org.bukkit.command.PluginCommand");
-            java.lang.reflect.Constructor<?> ctor = pluginCommandClass.getDeclaredConstructor(String.class, pluginClass);
+            Class<?> executorClass = Class.forName("org.bukkit.command.CommandExecutor");
+            Class<?> tabCompleterClass = Class.forName("org.bukkit.command.TabCompleter");
+            Class<?> cmdMapClass = Class.forName("org.bukkit.command.CommandMap");
+
+            Constructor<?> ctor = pluginCommandClass.getDeclaredConstructor(String.class, pluginClass);
             ctor.setAccessible(true);
 
             Method registerMethod = commandMap.getClass().getMethod("register", String.class, Class.forName("org.bukkit.command.Command"));
@@ -522,44 +584,120 @@ public class PluginManager {
                     continue;
                 }
 
-                Object existing = getCommand.invoke(commandMap, cmdName);
-                if (existing == null) {
-                    Object pluginCmd = ctor.newInstance(cmdName, pluginObj);
-                    Map<String, Object> details = entry.getValue();
-                    if (details != null) {
-                        Object description = details.get("description");
-                        if (description != null) {
-                            pluginCmd.getClass().getMethod("setDescription", String.class).invoke(pluginCmd, description.toString());
-                        }
-                        Object usage = details.get("usage");
-                        if (usage != null) {
-                            pluginCmd.getClass().getMethod("setUsage", String.class).invoke(pluginCmd, usage.toString());
-                        }
-                        Object permission = details.get("permission");
-                        if (permission != null) {
-                            pluginCmd.getClass().getMethod("setPermission", String.class).invoke(pluginCmd, permission.toString());
-                        }
-                        Object permissionMsg = details.get("permission-message");
-                        if (permissionMsg != null) {
-                            pluginCmd.getClass().getMethod("setPermissionMessage", String.class).invoke(pluginCmd, permissionMsg.toString());
-                        }
-                        Object aliases = details.get("aliases");
-                        if (aliases instanceof List<?> aliasList) {
-                            List<String> strAliases = new ArrayList<>();
-                            for (Object a : aliasList) {
-                                if (a != null) strAliases.add(a.toString());
-                            }
-                            pluginCmd.getClass().getMethod("setAliases", List.class).invoke(pluginCmd, strAliases);
-                        } else if (aliases instanceof String singleAlias) {
-                            pluginCmd.getClass().getMethod("setAliases", List.class).invoke(pluginCmd, List.of(singleAlias));
-                        }
-                    }
-                    registerMethod.invoke(commandMap, pluginName, pluginCmd);
+                String lower = cmdName.toLowerCase();
+                String namespaced = pluginName.toLowerCase() + ":" + lower;
+
+                Object existing = knownCommands.remove(lower);
+                if (existing != null) {
+                    try {
+                        existing.getClass().getMethod("unregister", cmdMapClass).invoke(existing, commandMap);
+                    } catch (Throwable ignored) {}
                 }
+                Object existingNs = knownCommands.remove(namespaced);
+                if (existingNs != null) {
+                    try {
+                        existingNs.getClass().getMethod("unregister", cmdMapClass).invoke(existingNs, commandMap);
+                    } catch (Throwable ignored) {}
+                }
+
+                Object pluginCmd = ctor.newInstance(cmdName, pluginObj);
+                Map<String, Object> details = entry.getValue();
+                if (details != null) {
+                    Object description = details.get("description");
+                    if (description != null) {
+                        pluginCmd.getClass().getMethod("setDescription", String.class).invoke(pluginCmd, description.toString());
+                    }
+                    Object usage = details.get("usage");
+                    if (usage != null) {
+                        pluginCmd.getClass().getMethod("setUsage", String.class).invoke(pluginCmd, usage.toString());
+                    }
+                    Object permission = details.get("permission");
+                    if (permission != null) {
+                        pluginCmd.getClass().getMethod("setPermission", String.class).invoke(pluginCmd, permission.toString());
+                    }
+                    Object permissionMsg = details.get("permission-message");
+                    if (permissionMsg != null) {
+                        pluginCmd.getClass().getMethod("setPermissionMessage", String.class).invoke(pluginCmd, permissionMsg.toString());
+                    }
+                    Object aliases = details.get("aliases");
+                    if (aliases instanceof List<?> aliasList) {
+                        List<String> strAliases = new ArrayList<>();
+                        for (Object a : aliasList) {
+                            if (a != null) {
+                                String aliasStr = a.toString();
+                                strAliases.add(aliasStr);
+                                knownCommands.remove(aliasStr.toLowerCase());
+                                knownCommands.remove(pluginName.toLowerCase() + ":" + aliasStr.toLowerCase());
+                            }
+                        }
+                        pluginCmd.getClass().getMethod("setAliases", List.class).invoke(pluginCmd, strAliases);
+                    } else if (aliases instanceof String singleAlias) {
+                        pluginCmd.getClass().getMethod("setAliases", List.class).invoke(pluginCmd, List.of(singleAlias));
+                        knownCommands.remove(singleAlias.toLowerCase());
+                        knownCommands.remove(pluginName.toLowerCase() + ":" + singleAlias.toLowerCase());
+                    }
+                }
+
+                if (executorClass.isInstance(pluginObj)) {
+                    try {
+                        pluginCmd.getClass().getMethod("setExecutor", executorClass).invoke(pluginCmd, pluginObj);
+                    } catch (Throwable ignored) {}
+                }
+                if (tabCompleterClass.isInstance(pluginObj)) {
+                    try {
+                        pluginCmd.getClass().getMethod("setTabCompleter", tabCompleterClass).invoke(pluginCmd, pluginObj);
+                    } catch (Throwable ignored) {}
+                }
+
+                registerMethod.invoke(commandMap, pluginName, pluginCmd);
             }
         } catch (Throwable t) {
             LOGGER.error("Failed to register plugin commands", t);
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void rebindPluginCommands(Object pluginObj) {
+        if (pluginObj == null) {
+            return;
+        }
+        try {
+            Class<?> bukkitClass = Class.forName("org.bukkit.Bukkit");
+            Object serverObj = bukkitClass.getMethod("getServer").invoke(null);
+            Object commandMap = serverObj.getClass().getMethod("getCommandMap").invoke(serverObj);
+            if (commandMap == null) return;
+
+            Method getDesc = pluginObj.getClass().getMethod("getDescription");
+            Object desc = getDesc.invoke(pluginObj);
+            Method getCommands = desc.getClass().getMethod("getCommands");
+            Map<String, Map<String, Object>> commands = (Map<String, Map<String, Object>>) getCommands.invoke(desc);
+            if (commands == null || commands.isEmpty()) return;
+
+            Method getCommand = commandMap.getClass().getMethod("getCommand", String.class);
+            Class<?> executorClass = Class.forName("org.bukkit.command.CommandExecutor");
+            Class<?> tabCompleterClass = Class.forName("org.bukkit.command.TabCompleter");
+
+            for (String cmdName : commands.keySet()) {
+                if (cmdName == null || cmdName.isBlank()) continue;
+                Object cmd = getCommand.invoke(commandMap, cmdName);
+                if (cmd != null) {
+                    try {
+                        Method getExec = cmd.getClass().getMethod("getExecutor");
+                        Object exec = getExec.invoke(cmd);
+                        if (exec == null && executorClass.isInstance(pluginObj)) {
+                            cmd.getClass().getMethod("setExecutor", executorClass).invoke(cmd, pluginObj);
+                        }
+                    } catch (Throwable ignored) {}
+                    try {
+                        Method getComp = cmd.getClass().getMethod("getTabCompleter");
+                        Object comp = getComp.invoke(cmd);
+                        if (comp == null && tabCompleterClass.isInstance(pluginObj)) {
+                            cmd.getClass().getMethod("setTabCompleter", tabCompleterClass).invoke(cmd, pluginObj);
+                        }
+                    } catch (Throwable ignored) {}
+                }
+            }
+        } catch (Throwable ignored) {}
     }
 
     private void syncServerCommands() {

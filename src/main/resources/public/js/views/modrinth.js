@@ -105,9 +105,13 @@ function renderModrinthHits(hits, serverId) {
             <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:12px;">
               ${p.iconUrl ? `
                 <img src="${p.iconUrl}" alt="" style="width:40px;height:40px;border-radius:8px;object-fit:cover;flex-shrink:0;" onerror="this.onerror=null;this.style.display='none';this.nextElementSibling.style.display='flex';">
-                <div style="display:none;width:40px;height:40px;border-radius:8px;background:var(--bg-subtle);align-items:center;justify-content:center;color:var(--text-subtle);font-size:18px;">🧩</div>
+                <div style="display:none;width:40px;height:40px;border-radius:8px;background:var(--bg-subtle);align-items:center;justify-content:center;color:var(--text-muted);">
+                  <svg style="width:20px;height:20px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v8"/><path d="m4.93 10.93 4.24 4.24"/><path d="M2 12h8"/><path d="m10.93 19.07 4.24-4.24"/><path d="M12 22v-8"/><path d="m19.07 13.07-4.24-4.24"/><path d="M22 12h-8"/><path d="m13.07 4.93-4.24 4.24"/></svg>
+                </div>
               ` : `
-                <div style="width:40px;height:40px;border-radius:8px;background:var(--bg-subtle);display:flex;align-items:center;justify-content:center;color:var(--text-subtle);font-size:18px;">🧩</div>
+                <div style="width:40px;height:40px;border-radius:8px;background:var(--bg-subtle);display:flex;align-items:center;justify-content:center;color:var(--text-muted);">
+                  <svg style="width:20px;height:20px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v8"/><path d="m4.93 10.93 4.24 4.24"/><path d="M2 12h8"/><path d="m10.93 19.07 4.24-4.24"/><path d="M12 22v-8"/><path d="m19.07 13.07-4.24-4.24"/><path d="M22 12h-8"/><path d="m13.07 4.93-4.24 4.24"/></svg>
+                </div>
               `}
               <div style="min-width:0;">
                 <h4 style="font-size:14px;font-weight:700;color:var(--text-main);line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">

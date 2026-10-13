@@ -161,28 +161,63 @@ function renderRolesTable(roles) {
   `;
 }
 
+const AVAILABLE_PERMS = [
+  'server.view', 'server.start', 'server.stop', 'server.restart', 'server.kill',
+  'console.view', 'console.execute',
+  'files.view', 'files.edit', 'files.upload', 'files.download', 'files.delete',
+  'plugins.view', 'plugins.manage',
+  'modrinth.view', 'modrinth.install',
+  'backups.view', 'backups.manage',
+  'server.edit'
+];
+
 function openCreateUserModal() {
   modal.open({
     title: i18n.t('createUser'),
+    wide: true,
     contentHtml: `
-      <form id="create-user-form">
-        <div class="form-group">
-          <label class="form-label">${i18n.t('username')}</label>
-          <input type="text" id="new-u-username" class="form-input" placeholder="e.g. friend1" required>
+      <form id="create-user-form" style="display:flex;flex-direction:column;gap:14px;">
+        <div style="display:grid;grid-template-columns:repeat(2, 1fr);gap:12px;">
+          <div class="form-group">
+            <label class="form-label">${i18n.t('username')}</label>
+            <input type="text" id="new-u-username" class="form-input" placeholder="e.g. friend1" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">${i18n.t('displayName')}</label>
+            <input type="text" id="new-u-display" class="form-input" placeholder="e.g. John Doe" required>
+          </div>
         </div>
-        <div class="form-group">
-          <label class="form-label">${i18n.t('displayName')}</label>
-          <input type="text" id="new-u-display" class="form-input" placeholder="e.g. John Doe" required>
+
+        <div style="display:grid;grid-template-columns:repeat(2, 1fr);gap:12px;">
+          <div class="form-group">
+            <label class="form-label">${i18n.t('password')}</label>
+            <input type="password" id="new-u-password" class="form-input" placeholder="••••••••" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">${i18n.t('role')}</label>
+            <select id="new-u-role" class="form-select">
+              ${cachedRoles.map(r => `<option value="${r.id}">${escapeHtml(r.name)}</option>`).join('')}
+            </select>
+          </div>
         </div>
+
+        <!-- Permissions Checkboxes Section -->
         <div class="form-group">
-          <label class="form-label">${i18n.t('password')}</label>
-          <input type="password" id="new-u-password" class="form-input" placeholder="••••••••" required>
-        </div>
-        <div class="form-group">
-          <label class="form-label">${i18n.t('role')}</label>
-          <select id="new-u-role" class="form-select">
-            ${cachedRoles.map(r => `<option value="${r.id}">${escapeHtml(r.name)}</option>`).join('')}
-          </select>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+            <label class="form-label" style="margin:0;">${i18n.t('serverPermissions')}</label>
+            <div style="display:flex;gap:6px;">
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-create-select-all" style="padding:2px 8px;font-size:11px;">Select All</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-create-deselect-all" style="padding:2px 8px;font-size:11px;">Deselect All</button>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(2, 1fr);gap:8px;padding:12px;background:var(--bg-subtle);border:1px solid var(--border);border-radius:8px;max-height:180px;overflow-y:auto;" id="create-perms-list">
+            ${AVAILABLE_PERMS.map(p => `
+              <label style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:500;cursor:pointer;">
+                <input type="checkbox" value="${p}" class="create-perm-cb" checked>
+                <span>${p}</span>
+              </label>
+            `).join('')}
+          </div>
         </div>
       </form>
     `,
@@ -197,12 +232,18 @@ function openCreateUserModal() {
           const p = document.getElementById('new-u-password').value;
           const r = document.getElementById('new-u-role').value;
 
+          const perms = [];
+          document.querySelectorAll('#create-perms-list input[type="checkbox"]:checked').forEach(cb => {
+            perms.push(cb.value);
+          });
+
           try {
             await api.post('/api/users', {
               username: u,
               displayName: d,
               password: p,
-              roleId: r
+              roleId: r,
+              permissions: perms
             });
             toast.success('User account created');
             close();
@@ -213,6 +254,28 @@ function openCreateUserModal() {
         }
       }
     ]
+  });
+
+  const roleSelect = document.getElementById('new-u-role');
+  roleSelect?.addEventListener('change', () => {
+    const val = roleSelect.value;
+    const cbs = document.querySelectorAll('#create-perms-list input[type="checkbox"]');
+    cbs.forEach(cb => {
+      if (val === 'admin') {
+        cb.checked = true;
+      } else if (val === 'moderator') {
+        cb.checked = !cb.value.includes('delete') && !cb.value.includes('kill');
+      } else {
+        cb.checked = cb.value.endsWith('.view');
+      }
+    });
+  });
+
+  document.getElementById('btn-create-select-all')?.addEventListener('click', () => {
+    document.querySelectorAll('#create-perms-list input[type="checkbox"]').forEach(cb => cb.checked = true);
+  });
+  document.getElementById('btn-create-deselect-all')?.addEventListener('click', () => {
+    document.querySelectorAll('#create-perms-list input[type="checkbox"]').forEach(cb => cb.checked = false);
   });
 }
 
@@ -253,16 +316,6 @@ async function openServerPermissionsModal(userId, username) {
       return;
     }
 
-    const availablePerms = [
-      'server.view', 'server.start', 'server.stop', 'server.restart', 'server.kill',
-      'console.view', 'console.execute',
-      'files.view', 'files.edit', 'files.upload', 'files.download', 'files.delete',
-      'plugins.view', 'plugins.manage',
-      'modrinth.view', 'modrinth.install',
-      'backups.view', 'backups.manage',
-      'server.edit'
-    ];
-
     modal.open({
       title: `${i18n.t('serverPermissions')}: ${username}`,
       wide: true,
@@ -275,7 +328,15 @@ async function openServerPermissionsModal(userId, username) {
             </select>
           </div>
 
-          <div style="display:grid;grid-template-columns:repeat(2, 1fr);gap:10px;padding:12px;background:var(--bg-subtle);border-radius:8px;" id="perms-checkbox-list">
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <label class="form-label" style="margin:0;">Privileges</label>
+            <div style="display:flex;gap:6px;">
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-edit-select-all" style="padding:2px 8px;font-size:11px;">Select All</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-edit-deselect-all" style="padding:2px 8px;font-size:11px;">Deselect All</button>
+            </div>
+          </div>
+
+          <div style="display:grid;grid-template-columns:repeat(2, 1fr);gap:10px;padding:12px;background:var(--bg-subtle);border-radius:8px;max-height:240px;overflow-y:auto;" id="perms-checkbox-list">
             Loading permissions...
           </div>
         </div>
@@ -310,16 +371,27 @@ async function openServerPermissionsModal(userId, username) {
       const container = document.getElementById('perms-checkbox-list');
       try {
         const assigned = await api.get(`/api/users/${userId}/permissions/${srvId}`);
-        container.innerHTML = availablePerms.map(p => `
-          <label style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:500;cursor:pointer;">
-            <input type="checkbox" value="${p}" ${assigned.includes(p) ? 'checked' : ''}>
-            <span>${p}</span>
-          </label>
-        `).join('');
+        const isAll = Array.isArray(assigned) && (assigned.includes('*') || assigned.includes('all'));
+        container.innerHTML = AVAILABLE_PERMS.map(p => {
+          const isChecked = isAll || (Array.isArray(assigned) && assigned.includes(p));
+          return `
+            <label style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:500;cursor:pointer;">
+              <input type="checkbox" value="${p}" class="edit-perm-cb" ${isChecked ? 'checked' : ''}>
+              <span>${p}</span>
+            </label>
+          `;
+        }).join('');
       } catch (e) {
         container.innerHTML = 'Failed to load permissions';
       }
     }
+
+    document.getElementById('btn-edit-select-all')?.addEventListener('click', () => {
+      document.querySelectorAll('#perms-checkbox-list input[type="checkbox"]').forEach(cb => cb.checked = true);
+    });
+    document.getElementById('btn-edit-deselect-all')?.addEventListener('click', () => {
+      document.querySelectorAll('#perms-checkbox-list input[type="checkbox"]').forEach(cb => cb.checked = false);
+    });
 
     sSelect?.addEventListener('change', (e) => loadPermsForServer(e.target.value));
     loadPermsForServer(servers[0].id);

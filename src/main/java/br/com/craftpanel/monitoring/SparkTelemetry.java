@@ -9,7 +9,8 @@ public record SparkTelemetry(
         CpuInfo cpu,
         MemoryInfo memory,
         WorldSummary worldsSummary,
-        PluginSummary pluginsSummary
+        PluginSummary pluginsSummary,
+        List<MetricHistoryPoint> history
 ) {
     public record ServerInfo(
             String name,
@@ -90,6 +91,19 @@ public record SparkTelemetry(
             String version,
             boolean enabled,
             String author,
-            String description
+            String description,
+            double cpuPercent,
+            String topClass,
+            double topClassPercent
+    ) {}
+
+    public record MetricHistoryPoint(
+            long timestamp,
+            double processCpu,
+            double systemCpu,
+            double heapPercent,
+            double physicalPercent,
+            double tps,
+            double mspt
     ) {}
 }

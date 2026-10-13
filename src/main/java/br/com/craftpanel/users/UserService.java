@@ -129,6 +129,24 @@ public class UserService {
         return userRepo.getUserServerPermissions(userId, serverId);
     }
 
+    public Set<String> getEffectiveServerPermissions(String userId, String serverId) {
+        Set<String> result = new java.util.HashSet<>(userRepo.getUserServerPermissions(userId, serverId));
+        Optional<User> userOpt = userRepo.findById(userId);
+        if (userOpt.isPresent()) {
+            User user = userOpt.get();
+            Optional<Role> roleOpt = userRepo.findRoleById(user.roleId());
+            if (roleOpt.isPresent()) {
+                List<String> rolePerms = roleOpt.get().permissions();
+                if (rolePerms.contains(Permission.ALL)) {
+                    result.add(Permission.ALL);
+                } else {
+                    result.addAll(rolePerms);
+                }
+            }
+        }
+        return result;
+    }
+
     public void setServerPermissions(String userId, String serverId, List<String> permissions) {
         userRepo.setUserServerPermissions(userId, serverId, permissions);
     }

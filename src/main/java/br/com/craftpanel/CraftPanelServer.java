@@ -76,6 +76,47 @@ public class CraftPanelServer {
         return INSTANCE;
     }
 
+    private static volatile String initialSetupKey = null;
+
+    public static String getInitialSetupKey() {
+        return initialSetupKey;
+    }
+
+    public static void clearInitialSetupKey() {
+        initialSetupKey = null;
+    }
+
+    private void announceInitialSetupKey(String key, PanelConfig cfg) {
+        String url = "http://" + (cfg.server().host().equals("0.0.0.0") ? "127.0.0.1" : cfg.server().host()) + ":" + cfg.server().port();
+        try {
+            Class<?> bukkitClass = Class.forName("org.bukkit.Bukkit");
+            Object consoleSender = bukkitClass.getMethod("getConsoleSender").invoke(null);
+            if (consoleSender != null) {
+                Class<?> chatColorClass = Class.forName("org.bukkit.ChatColor");
+                String gold = String.valueOf(chatColorClass.getField("GOLD").get(null));
+                String yellow = String.valueOf(chatColorClass.getField("YELLOW").get(null));
+                String green = String.valueOf(chatColorClass.getField("GREEN").get(null));
+                String aqua = String.valueOf(chatColorClass.getField("AQUA").get(null));
+                String bold = String.valueOf(chatColorClass.getField("BOLD").get(null));
+                String reset = String.valueOf(chatColorClass.getField("RESET").get(null));
+
+                java.lang.reflect.Method sendMsg = consoleSender.getClass().getMethod("sendMessage", String.class);
+                sendMsg.invoke(consoleSender, gold + "==================================================================" + reset);
+                sendMsg.invoke(consoleSender, yellow + "[CraftPanel] " + bold + "INITIAL ADMINISTRATOR SETUP REQUIRED!" + reset);
+                sendMsg.invoke(consoleSender, green + "[CraftPanel] Setup Security Key: " + aqua + bold + key + reset);
+                sendMsg.invoke(consoleSender, yellow + "[CraftPanel] Enter this key on the web setup screen to claim the admin account." + reset);
+                sendMsg.invoke(consoleSender, yellow + "[CraftPanel] Setup URL: " + aqua + url + reset);
+                sendMsg.invoke(consoleSender, gold + "==================================================================" + reset);
+            }
+        } catch (Throwable ignored) {}
+        LOGGER.warn("==================================================================");
+        LOGGER.warn("[CraftPanel] INITIAL ADMINISTRATOR SETUP REQUIRED!");
+        LOGGER.warn("[CraftPanel] Setup Security Key: {}", key);
+        LOGGER.warn("[CraftPanel] Enter this key on the web setup screen to claim the admin account.");
+        LOGGER.warn("[CraftPanel] Setup URL: {}", url);
+        LOGGER.warn("==================================================================");
+    }
+
     public synchronized void start(PanelConfig panelConfig) {
         if (running) {
             LOGGER.warn("CraftPanel server is already running");
@@ -102,11 +143,18 @@ public class CraftPanelServer {
         TaskManager taskManager = new TaskManager(db);
         AuditService auditService = new AuditService(db);
 
+        if (this.authService.isSetupRequired()) {
+            String key = "CP-" + java.util.UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+            initialSetupKey = key;
+            announceInitialSetupKey(key, config);
+        }
+
+        EventsWebSocketHandler eventsWs = new EventsWebSocketHandler(authService, userService, taskManager);
         AuthMiddleware authMiddleware = new AuthMiddleware(authService, userService);
         SetupController setupController = new SetupController(authService, auditService, config);
         AuthController authController = new AuthController(authService, userService, auditService, config);
         ServerController serverController = new ServerController(serverService, processManager, monitoringService, userService, auditService, authMiddleware);
-        FileController fileController = new FileController(fileManager, serverService, auditService, authMiddleware);
+        FileController fileController = new FileController(fileManager, serverService, auditService, authMiddleware, eventsWs);
         PluginController pluginController = new PluginController(pluginManager, serverService, auditService, authMiddleware);
         ModrinthController modrinthController = new ModrinthController(modrinthClient, serverService, pluginManager, taskManager, auditService, authMiddleware);
         InstallerController installerController = new InstallerController(installerService, taskManager, auditService, authMiddleware);
@@ -118,7 +166,6 @@ public class CraftPanelServer {
         TaskController taskController = new TaskController(taskManager);
 
         ConsoleWebSocketHandler consoleWs = new ConsoleWebSocketHandler(authService, userService, serverService, processManager);
-        EventsWebSocketHandler eventsWs = new EventsWebSocketHandler(authService, userService, taskManager);
         this.monitoringWs = new MonitoringWebSocketHandler(authService, userService, monitoringService, serverService);
 
         ObjectMapper mapper = new ObjectMapper();
@@ -215,6 +262,7 @@ public class CraftPanelServer {
         app.get("/api/monitoring/system", monitoringController::getSystemMetrics);
         app.get("/api/servers/{id}/metrics", monitoringController::getServerMetrics);
         app.get("/api/servers/{id}/monitoring/spark", monitoringController::getSparkTelemetry);
+        app.get("/api/servers/{id}/monitoring/history", monitoringController::getHistory);
 
         app.get("/api/audit", auditController::list);
 

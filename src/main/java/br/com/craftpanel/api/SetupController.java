@@ -24,7 +24,10 @@ public class SetupController {
     }
 
     public void getStatus(Context ctx) {
-        ctx.json(Map.of("setupRequired", authService.isSetupRequired()));
+        ctx.json(Map.of(
+                "setupRequired", authService.isSetupRequired(),
+                "version", br.com.craftpanel.CraftPanelVersion.getVersion()
+        ));
     }
 
     public void setupFirstAdmin(Context ctx) {
@@ -37,14 +40,22 @@ public class SetupController {
         String username = body.path("username").asText(null);
         String password = body.path("password").asText(null);
         String displayName = body.path("displayName").asText(null);
+        String setupKey = body.path("setupKey").asText("").trim();
 
         if (username == null || password == null) {
             ctx.status(400).json(Map.of("error", "Username and password are required"));
             return;
         }
 
+        String expectedKey = br.com.craftpanel.CraftPanelServer.getInitialSetupKey();
+        if (expectedKey != null && !expectedKey.equalsIgnoreCase(setupKey)) {
+            ctx.status(400).json(Map.of("error", "Invalid console security key. Check your server console logs for the setup key."));
+            return;
+        }
+
         try {
             User user = authService.setupFirstAdmin(username, password, displayName);
+            br.com.craftpanel.CraftPanelServer.clearInitialSetupKey();
             Session session = authService.login(username, password, ctx.ip(), ctx.userAgent());
 
             Cookie cookie = new Cookie("craftpanel_session", session.token());

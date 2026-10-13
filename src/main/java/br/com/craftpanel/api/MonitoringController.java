@@ -9,6 +9,8 @@ import br.com.craftpanel.users.Permission;
 import io.javalin.http.Context;
 import io.javalin.http.NotFoundResponse;
 
+import java.util.List;
+
 public class MonitoringController {
     private final MonitoringService monitoringService;
     private final ServerService serverService;
@@ -42,5 +44,14 @@ public class MonitoringController {
 
         SparkTelemetry telemetry = monitoringService.collectSparkTelemetry(server);
         ctx.json(telemetry);
+    }
+
+    public void getHistory(Context ctx) {
+        String serverId = ctx.pathParam("id");
+        authMiddleware.requireServerPermission(ctx, serverId, Permission.MONITORING_VIEW);
+        serverService.getServer(serverId).orElseThrow(() -> new NotFoundResponse("Server not found"));
+
+        List<SparkTelemetry.MetricHistoryPoint> history = monitoringService.getHistory(serverId);
+        ctx.json(history);
     }
 }

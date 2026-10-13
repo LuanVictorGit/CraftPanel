@@ -18,6 +18,9 @@ import io.javalin.websocket.WsContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -60,23 +63,30 @@ public class ConsoleWebSocketHandler {
                 return;
             }
 
-            if (!userService.hasServerPermission(user, serverId, Permission.CONSOLE_VIEW) && !userService.hasServerPermission(user, "local", Permission.CONSOLE_VIEW)) {
+            if (!userService.hasServerPermission(user, serverId, Permission.CONSOLE_VIEW)) {
                 ctx.send(MAPPER.writeValueAsString(Map.of("type", "error", "message", "Permission denied: console.view")));
                 ctx.closeSession();
                 return;
             }
 
-            Optional<MinecraftServer> serverOpt = serverService.getServer(serverId);
-            if (serverOpt.isEmpty()) {
-                serverOpt = serverService.getServer("local");
+            ServerProcess proc = processManager.getProcess(serverId);
+            if (proc == null) {
+                Optional<MinecraftServer> serverOpt = serverService.getServer(serverId);
+                if (serverOpt.isPresent()) {
+                    proc = processManager.getProcess(serverOpt.get());
+                } else if ("local".equalsIgnoreCase(serverId)) {
+                    serverOpt = serverService.listServers().stream().findFirst();
+                    if (serverOpt.isPresent()) {
+                        proc = processManager.getProcess(serverOpt.get());
+                    }
+                }
             }
-            if (serverOpt.isEmpty()) {
-                ctx.send(MAPPER.writeValueAsString(Map.of("type", "error", "message", "Server not found")));
+
+            if (proc == null) {
+                ctx.send(MAPPER.writeValueAsString(Map.of("type", "error", "message", "Server process unavailable for " + serverId)));
                 ctx.closeSession();
                 return;
             }
-
-            ServerProcess proc = processManager.getProcess(serverOpt.get());
 
             ServerProcess.Listener listener = new ServerProcess.Listener() {
                 @Override
@@ -117,19 +127,33 @@ public class ConsoleWebSocketHandler {
             ClientContext client = clients.get(ctx);
             if (client == null) return;
 
-            if (!userService.hasServerPermission(client.user(), client.serverId(), Permission.CONSOLE_EXECUTE)) {
-                ctx.send(MAPPER.writeValueAsString(Map.of("type", "error", "message", "Permission denied: console.execute")));
-                return;
-            }
-
             String msg = ctx.message();
             String command = msg;
             try {
                 var node = MAPPER.readTree(msg);
+                String msgType = node.path("type").asText("");
+                if ("tab_complete".equalsIgnoreCase(msgType) || node.has("buffer")) {
+                    String buffer = node.path("buffer").asText("");
+                    List<String> completions = resolveTabCompletions(buffer);
+                    Map<String, String> hint = resolveCommandHint(buffer);
+                    ctx.send(MAPPER.writeValueAsString(Map.of(
+                            "type", "tab_complete",
+                            "buffer", buffer,
+                            "completions", completions,
+                            "hint", hint
+                    )));
+                    return;
+                }
+
                 if (node.has("command")) {
                     command = node.get("command").asText();
                 }
             } catch (Exception ignored) {}
+
+            if (!userService.hasServerPermission(client.user(), client.serverId(), Permission.CONSOLE_EXECUTE)) {
+                ctx.send(MAPPER.writeValueAsString(Map.of("type", "error", "message", "Permission denied: console.execute")));
+                return;
+            }
 
             if (command != null && !command.isBlank()) {
                 ServerProcess proc = processManager.getProcess(client.serverId());
@@ -165,6 +189,97 @@ public class ConsoleWebSocketHandler {
                 }
             }
         });
+    }
+
+    public static List<String> resolveTabCompletions(String buffer) {
+        List<String> completions = new ArrayList<>();
+        if (buffer == null) buffer = "";
+        String query = buffer;
+
+        try {
+            Class<?> bukkitClass = Class.forName("org.bukkit.Bukkit");
+            Object server = bukkitClass.getMethod("getServer").invoke(null);
+            Object consoleSender = bukkitClass.getMethod("getConsoleSender").invoke(null);
+            Class<?> senderClass = Class.forName("org.bukkit.command.CommandSender");
+            Method tabComplete = server.getClass().getMethod("tabComplete", senderClass, String.class);
+
+            String cmd = query.startsWith("/") ? query : ("/" + query);
+            List<?> results = (List<?>) tabComplete.invoke(server, consoleSender, cmd);
+            if (results != null) {
+                for (Object r : results) {
+                    if (r != null) {
+                        String str = r.toString();
+                        if (str.startsWith("/") && !query.startsWith("/")) {
+                            str = str.substring(1);
+                        }
+                        completions.add(str);
+                    }
+                }
+            }
+
+            if (completions.isEmpty() && !query.startsWith("/")) {
+                results = (List<?>) tabComplete.invoke(server, consoleSender, query);
+                if (results != null) {
+                    for (Object r : results) {
+                        if (r != null) completions.add(r.toString());
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
+
+        if (completions.isEmpty() && !query.contains(" ")) {
+            String clean = query.startsWith("/") ? query.substring(1).toLowerCase() : query.toLowerCase();
+            try {
+                Class<?> bukkitClass = Class.forName("org.bukkit.Bukkit");
+                Object server = bukkitClass.getMethod("getServer").invoke(null);
+                Object commandMap = server.getClass().getMethod("getCommandMap").invoke(server);
+                Field knownCommandsField = commandMap.getClass().getDeclaredField("knownCommands");
+                knownCommandsField.setAccessible(true);
+                Map<?, ?> map = (Map<?, ?>) knownCommandsField.get(commandMap);
+                for (Object k : map.keySet()) {
+                    String cmdName = String.valueOf(k);
+                    if (!cmdName.contains(":") && cmdName.toLowerCase().startsWith(clean)) {
+                        completions.add(query.startsWith("/") ? ("/" + cmdName) : cmdName);
+                    }
+                }
+            } catch (Throwable ignored) {}
+        }
+
+        completions.sort(String.CASE_INSENSITIVE_ORDER);
+        if (completions.size() > 50) {
+            return completions.subList(0, 50);
+        }
+        return completions;
+    }
+
+    public static Map<String, String> resolveCommandHint(String buffer) {
+        if (buffer == null || buffer.isBlank()) {
+            return Map.of();
+        }
+        String trimmed = buffer.trim();
+        if (trimmed.startsWith("/")) {
+            trimmed = trimmed.substring(1);
+        }
+        String firstWord = trimmed.split(" ")[0].toLowerCase();
+        try {
+            Class<?> bukkitClass = Class.forName("org.bukkit.Bukkit");
+            Object server = bukkitClass.getMethod("getServer").invoke(null);
+            Object commandMap = server.getClass().getMethod("getCommandMap").invoke(server);
+            Method getCommand = commandMap.getClass().getMethod("getCommand", String.class);
+            Object cmd = getCommand.invoke(commandMap, firstWord);
+            if (cmd != null) {
+                Method getUsage = cmd.getClass().getMethod("getUsage");
+                Method getDesc = cmd.getClass().getMethod("getDescription");
+                String usage = (String) getUsage.invoke(cmd);
+                String desc = (String) getDesc.invoke(cmd);
+                return Map.of(
+                        "command", firstWord,
+                        "usage", usage != null ? usage.replace("<command>", firstWord) : ("/" + firstWord),
+                        "description", desc != null ? desc : ""
+                );
+            }
+        } catch (Throwable ignored) {}
+        return Map.of();
     }
 
     private User authenticate(WsContext ctx) {

@@ -72,7 +72,9 @@ export const loadingModal = {
               <circle cx="25" cy="25" r="20" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-dasharray="80" stroke-dashoffset="60" style="opacity:0.25;"/>
               <circle cx="25" cy="25" r="20" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-dasharray="90" stroke-dashoffset="30"/>
             </svg>
-            <div style="position:absolute;font-size:20px;">⚡</div>
+            <div style="position:absolute;display:flex;align-items:center;justify-content:center;color:var(--brand-primary);">
+              <svg style="width:20px;height:20px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            </div>
           </div>
 
           <div>

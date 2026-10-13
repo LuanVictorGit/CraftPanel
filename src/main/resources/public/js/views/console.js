@@ -8,6 +8,10 @@ let commandHistory = [];
 let historyIndex = -1;
 let autoscrollEnabled = true;
 
+let currentSuggestions = [];
+let selectedSuggestionIndex = -1;
+let debounceCompleteTimer = null;
+
 export async function renderConsole(root, state) {
   const serverId = state.activeServerId || 'local';
 
@@ -35,11 +39,25 @@ export async function renderConsole(root, state) {
 
         <div class="console-output" id="console-output-area"></div>
 
-        <form class="console-input-wrap" id="console-cmd-form">
-          <span class="console-prompt">&gt;</span>
-          <input type="text" id="console-cmd-input" class="console-input" placeholder="${i18n.t('commandPlaceholder')}" autocomplete="off">
-          <button type="submit" class="btn btn-primary btn-sm">${i18n.t('sendCommand')}</button>
-        </form>
+        <div style="position:relative;width:100%;">
+          <!-- In-Game Minecraft Command Assistant HUD -->
+          <div id="console-assistant-overlay" class="console-assistant-hud" style="display:none;">
+            <!-- Brigadier Command Syntax Indicator -->
+            <div id="console-hint-bar" class="console-hint-bar" style="display:none;">
+              <span class="hint-icon"><svg style="width:13px;height:13px;display:inline-block;vertical-align:middle;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></span>
+              <span id="console-hint-usage" class="hint-usage"></span>
+              <span id="console-hint-desc" class="hint-desc"></span>
+            </div>
+            <!-- Suggestions List -->
+            <div id="console-suggestions-list" class="console-suggestions-list"></div>
+          </div>
+
+          <form class="console-input-wrap" id="console-cmd-form">
+            <span class="console-prompt">&gt;</span>
+            <input type="text" id="console-cmd-input" class="console-input" placeholder="${i18n.t('commandPlaceholder')}" autocomplete="off" spellcheck="false">
+            <button type="submit" class="btn btn-primary btn-sm">${i18n.t('sendCommand')}</button>
+          </form>
+        </div>
       </div>
     </div>
   `;
@@ -52,6 +70,12 @@ export async function renderConsole(root, state) {
   const searchInput = document.getElementById('console-search-input');
   const statusDot = document.getElementById('console-status-dot');
   const statusText = document.getElementById('console-status-text');
+
+  const assistantOverlay = document.getElementById('console-assistant-overlay');
+  const hintBar = document.getElementById('console-hint-bar');
+  const hintUsage = document.getElementById('console-hint-usage');
+  const hintDesc = document.getElementById('console-hint-desc');
+  const suggestionsList = document.getElementById('console-suggestions-list');
 
   autoscrollChk?.addEventListener('change', (e) => {
     autoscrollEnabled = e.target.checked;
@@ -70,14 +94,147 @@ export async function renderConsole(root, state) {
     });
   });
 
-  cmdInput?.addEventListener('keydown', (e) => {
-    if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      if (commandHistory.length > 0 && historyIndex < commandHistory.length - 1) {
-        historyIndex++;
-        cmdInput.value = commandHistory[commandHistory.length - 1 - historyIndex];
+  function hideAssistant() {
+    if (assistantOverlay) assistantOverlay.style.display = 'none';
+    currentSuggestions = [];
+    selectedSuggestionIndex = -1;
+  }
+
+  function formatSyntaxUsage(usageStr) {
+    if (!usageStr) return '';
+    let esc = escapeHtml(usageStr);
+    esc = esc.replace(/&lt;([^&]+)&gt;/g, '<span class="syntax-param">&lt;$1&gt;</span>');
+    esc = esc.replace(/\[([^\]]+)\]/g, '<span class="syntax-opt">[$1]</span>');
+    return esc;
+  }
+
+  function renderAssistant(data) {
+    if (!assistantOverlay || !suggestionsList) return;
+    const currentVal = cmdInput?.value ?? '';
+    if (!currentVal.trim()) {
+      hideAssistant();
+      return;
+    }
+
+    const hasHint = data.hint && data.hint.usage;
+    if (hasHint && hintBar && hintUsage) {
+      hintBar.style.display = 'flex';
+      hintUsage.innerHTML = formatSyntaxUsage(data.hint.usage);
+      if (hintDesc) {
+        hintDesc.innerText = data.hint.description || '';
       }
-    } else if (e.key === 'ArrowDown') {
+    } else if (hintBar) {
+      hintBar.style.display = 'none';
+    }
+
+    currentSuggestions = Array.isArray(data.completions) ? data.completions : [];
+    selectedSuggestionIndex = -1;
+
+    if (currentSuggestions.length === 0 && !hasHint) {
+      hideAssistant();
+      return;
+    }
+
+    assistantOverlay.style.display = 'flex';
+
+    if (currentSuggestions.length === 0) {
+      suggestionsList.innerHTML = '';
+      return;
+    }
+
+    const buffer = data.buffer || '';
+    const lastWord = buffer.includes(' ') ? buffer.substring(buffer.lastIndexOf(' ') + 1) : buffer;
+    const cleanLastWord = lastWord.toLowerCase();
+
+    suggestionsList.innerHTML = currentSuggestions.slice(0, 15).map((sug, idx) => {
+      let displayHtml = escapeHtml(sug);
+      if (cleanLastWord && sug.toLowerCase().startsWith(cleanLastWord)) {
+        displayHtml = `<span class="sug-match">${escapeHtml(sug.substring(0, cleanLastWord.length))}</span>${escapeHtml(sug.substring(cleanLastWord.length))}`;
+      }
+
+      return `
+        <div class="suggestion-item ${idx === 0 ? 'active' : ''}" data-index="${idx}" data-sug="${escapeHtml(sug)}">
+          <span>${displayHtml}</span>
+          <span class="sug-key-hint">${idx === 0 ? 'Tab' : '↵'}</span>
+        </div>
+      `;
+    }).join('');
+
+    selectedSuggestionIndex = 0;
+
+    suggestionsList.querySelectorAll('.suggestion-item').forEach(item => {
+      item.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const sug = item.dataset.sug;
+        if (sug) {
+          applySuggestion(sug);
+        }
+      });
+    });
+  }
+
+  function applySuggestion(sug) {
+    if (!cmdInput) return;
+    const val = cmdInput.value;
+    if (val.includes(' ')) {
+      const parts = val.split(' ');
+      parts[parts.length - 1] = sug;
+      cmdInput.value = parts.join(' ') + ' ';
+    } else {
+      const startsSlash = val.startsWith('/');
+      cmdInput.value = (startsSlash ? (sug.startsWith('/') ? sug : ('/' + sug)) : sug) + ' ';
+    }
+    cmdInput.focus();
+    requestAutocomplete(cmdInput.value);
+  }
+
+  function requestAutocomplete(text) {
+    if (!text || !text.trim()) {
+      hideAssistant();
+      return;
+    }
+    if (activeWs && activeWs.ws && activeWs.ws.readyState === WebSocket.OPEN) {
+      activeWs.send({ type: 'tab_complete', buffer: text });
+    }
+  }
+
+  cmdInput?.addEventListener('input', (e) => {
+    const val = e.target.value;
+    if (debounceCompleteTimer) clearTimeout(debounceCompleteTimer);
+    if (!val.trim()) {
+      hideAssistant();
+      return;
+    }
+    debounceCompleteTimer = setTimeout(() => {
+      requestAutocomplete(val);
+    }, 45);
+  });
+
+  cmdInput?.addEventListener('keydown', (e) => {
+    const isAssistantOpen = assistantOverlay && assistantOverlay.style.display !== 'none';
+
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      if (isAssistantOpen && currentSuggestions.length > 0) {
+        const idx = selectedSuggestionIndex >= 0 ? selectedSuggestionIndex : 0;
+        const sug = currentSuggestions[idx];
+        if (sug) {
+          applySuggestion(sug);
+        }
+      } else {
+        requestAutocomplete(cmdInput.value);
+      }
+      return;
+    }
+
+    if (e.key === 'ArrowDown') {
+      if (isAssistantOpen && currentSuggestions.length > 0) {
+        e.preventDefault();
+        selectedSuggestionIndex = (selectedSuggestionIndex + 1) % Math.min(currentSuggestions.length, 15);
+        updateActiveSuggestion();
+        return;
+      }
+
       e.preventDefault();
       if (historyIndex > 0) {
         historyIndex--;
@@ -86,6 +243,60 @@ export async function renderConsole(root, state) {
         historyIndex = -1;
         cmdInput.value = '';
       }
+      hideAssistant();
+      return;
+    }
+
+    if (e.key === 'ArrowUp') {
+      if (isAssistantOpen && currentSuggestions.length > 0) {
+        e.preventDefault();
+        selectedSuggestionIndex = (selectedSuggestionIndex - 1 + Math.min(currentSuggestions.length, 15)) % Math.min(currentSuggestions.length, 15);
+        updateActiveSuggestion();
+        return;
+      }
+
+      e.preventDefault();
+      if (commandHistory.length > 0 && historyIndex < commandHistory.length - 1) {
+        historyIndex++;
+        cmdInput.value = commandHistory[commandHistory.length - 1 - historyIndex];
+      }
+      hideAssistant();
+      return;
+    }
+
+    if (e.key === 'Escape') {
+      hideAssistant();
+      return;
+    }
+
+    if (e.key === 'Enter') {
+      if (isAssistantOpen && selectedSuggestionIndex > 0) {
+        e.preventDefault();
+        const sug = currentSuggestions[selectedSuggestionIndex];
+        if (sug) {
+          applySuggestion(sug);
+        }
+        return;
+      }
+      hideAssistant();
+    }
+  });
+
+  function updateActiveSuggestion() {
+    if (!suggestionsList) return;
+    const items = suggestionsList.querySelectorAll('.suggestion-item');
+    items.forEach((item, idx) => {
+      const isActive = idx === selectedSuggestionIndex;
+      item.classList.toggle('active', isActive);
+      if (isActive) {
+        item.scrollIntoView({ block: 'nearest' });
+      }
+    });
+  }
+
+  document.addEventListener('click', (e) => {
+    if (!assistantOverlay?.contains(e.target) && e.target !== cmdInput) {
+      hideAssistant();
     }
   });
 
@@ -97,6 +308,7 @@ export async function renderConsole(root, state) {
     commandHistory.push(cmd);
     historyIndex = -1;
     cmdInput.value = '';
+    hideAssistant();
 
     if (activeWs) {
       activeWs.send({ command: cmd });
@@ -120,6 +332,8 @@ export async function renderConsole(root, state) {
       updateStatus(data.state);
     } else if (data.type === 'error') {
       toast.error(data.message);
+    } else if (data.type === 'tab_complete') {
+      renderAssistant(data);
     }
   }, () => {
     updateStatus('CONNECTED');

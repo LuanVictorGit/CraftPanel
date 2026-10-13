@@ -109,6 +109,11 @@ public class PluginController {
             return;
         }
 
+        if (filename.toLowerCase().contains("craftpanel")) {
+            ctx.status(400).json(Map.of("error", "CraftPanel is the core system plugin and cannot be deleted."));
+            return;
+        }
+
         try {
             pluginManager.deletePlugin(server, filename, deleteConfig);
             auditService.log(user.id(), user.username(), "PLUGIN_DELETE", "PLUGIN", filename, "Deleted plugin with backup on server " + server.name() + " (deleteConfig=" + deleteConfig + ")", ctx.ip(), "SUCCESS");

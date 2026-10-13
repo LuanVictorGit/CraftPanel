@@ -10,19 +10,17 @@ language: "en"
 # Web server HTTP and network binding settings.
 server:
   # The IP address the panel binds to.
-  # Default is "127.0.0.1" (loopback only for local security).
-  # Set to "0.0.0.0" only if remote_access_enabled is true.
-  host: "127.0.0.1"
+  # Default is "0.0.0.0" to allow remote web administration.
+  host: "0.0.0.0"
 
   # The HTTP port the panel listens on.
-  # Valid range: 1024-65535.
-  port: 8080
+  # Valid range: 1024-65535. Default: 2222.
+  port: 2222
 
 # Security and session policy settings.
 security:
   # Enables binding to non-loopback addresses (e.g. 0.0.0.0 or LAN IP).
-  # Remote access must remain disabled until explicitly authorized.
-  remote_access_enabled: false
+  remote_access_enabled: true
 
   # Time in minutes before an inactive session expires.
   # Default is 60 minutes.

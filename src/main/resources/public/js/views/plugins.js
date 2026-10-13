@@ -1,6 +1,7 @@
 import { api } from '../api.js';
 import { toast, modal, formatBytes, escapeHtml, loadingModal } from '../ui.js';
 import { i18n } from '../i18n.js';
+import { icons } from '../icons.js';
 
 export async function renderPlugins(root, state) {
   const serverId = state.activeServerId || 'local';
@@ -114,18 +115,22 @@ function renderPluginsTable(serverId, plugins) {
               <td style="color:var(--text-muted);font-size:12px;">${escapeHtml(p.author || 'Unknown')}</td>
               <td style="color:var(--text-muted);font-size:12px;">${formatBytes(p.sizeBytes)}</td>
               <td style="text-align:right;">
-                <div style="display:inline-flex;gap:6px;">
-                  ${p.pendingRestart ? `
-                    <button class="btn btn-primary btn-sm btn-load-plug" data-file="${p.filename}">
-                      ${i18n.t('loadNow')}
+                <div style="display:inline-flex;gap:6px;align-items:center;">
+                  ${((p.name && p.name.toLowerCase() === 'craftpanel') || (p.filename && p.filename.toLowerCase().includes('craftpanel'))) ? `
+                    <span class="badge badge-purple" style="font-size:11px;font-weight:700;padding:4px 9px;" title="CraftPanel is the core system plugin and cannot be removed.">Core System</span>
+                  ` : `
+                    ${p.pendingRestart ? `
+                      <button class="btn btn-primary btn-sm btn-load-plug" data-file="${p.filename}">
+                        ${i18n.t('loadNow')}
+                      </button>
+                    ` : ''}
+                    <button class="btn btn-secondary btn-sm btn-toggle-plug" data-file="${p.filename}">
+                      ${p.enabled ? i18n.t('disable') : i18n.t('enable')}
                     </button>
-                  ` : ''}
-                  <button class="btn btn-secondary btn-sm btn-toggle-plug" data-file="${p.filename}">
-                    ${p.enabled ? i18n.t('disable') : i18n.t('enable')}
-                  </button>
-                  <button class="btn btn-danger btn-sm btn-delete-plug" data-file="${p.filename}">
-                    ${i18n.t('delete')}
-                  </button>
+                    <button class="btn btn-danger btn-sm btn-delete-plug" data-file="${p.filename}">
+                      ${i18n.t('delete')}
+                    </button>
+                  `}
                 </div>
               </td>
             </tr>
@@ -308,9 +313,9 @@ function openInstallPluginModal(serverId) {
           <div style="display:flex;align-items:center;gap:10px;min-width:0;flex:1;">
             ${iconSrc ? `
               <img src="${escapeHtml(iconSrc)}" alt="" style="width:38px;height:38px;border-radius:6px;flex-shrink:0;object-fit:cover;" onerror="this.onerror=null;this.style.display='none';this.nextElementSibling.style.display='flex';">
-              <div style="display:none;width:38px;height:38px;border-radius:6px;background:var(--border);flex-shrink:0;align-items:center;justify-content:center;color:var(--text-muted);font-size:16px;">🧩</div>
+              <div style="display:none;width:38px;height:38px;border-radius:6px;background:var(--border);flex-shrink:0;align-items:center;justify-content:center;color:var(--text-muted);">${icons.plugin(20)}</div>
             ` : `
-              <div style="width:38px;height:38px;border-radius:6px;background:var(--border);flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:16px;">🧩</div>
+              <div style="width:38px;height:38px;border-radius:6px;background:var(--border);flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--text-muted);">${icons.plugin(20)}</div>
             `}
             <div style="min-width:0;flex:1;">
               <div style="display:flex;align-items:center;gap:6px;">

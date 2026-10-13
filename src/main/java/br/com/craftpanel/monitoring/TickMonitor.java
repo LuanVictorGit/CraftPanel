@@ -1,10 +1,16 @@
 package br.com.craftpanel.monitoring;
 
 import org.bukkit.Bukkit;
+import org.bukkit.World;
+import org.bukkit.entity.Item;
+import org.bukkit.entity.LivingEntity;
+import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 
 import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 public class TickMonitor implements Runnable {
     private static final int HISTORY_SIZE = 100;
@@ -15,6 +21,9 @@ public class TickMonitor implements Runnable {
     private long lastTickTime = System.nanoTime();
     private int taskId = -1;
     private Object foliaTask = null;
+    private int worldCollectTicks = 0;
+
+    private volatile SparkTelemetry.WorldSummary cachedWorldSummary = new SparkTelemetry.WorldSummary(0, 0, 0, List.of());
 
     public static synchronized TickMonitor getInstance() {
         if (instance == null) {
@@ -28,7 +37,9 @@ public class TickMonitor implements Runnable {
             return;
         }
 
+        PluginCpuProfiler.getInstance().start();
         lastTickTime = System.nanoTime();
+
         try {
             Class<?> bukkitClass = Class.forName("org.bukkit.Bukkit");
             Method getGlobal = bukkitClass.getMethod("getGlobalRegionScheduler");
@@ -40,9 +51,13 @@ public class TickMonitor implements Runnable {
                 this.taskId = Bukkit.getScheduler().scheduleSyncRepeatingTask(plugin, this, 1L, 1L);
             } catch (Throwable ignored) {}
         }
+
+        updateWorldSummary();
     }
 
     public synchronized void stop() {
+        PluginCpuProfiler.getInstance().stop();
+
         if (taskId != -1) {
             try {
                 Bukkit.getScheduler().cancelTask(taskId);
@@ -63,6 +78,8 @@ public class TickMonitor implements Runnable {
     }
 
     private void tick() {
+        PluginCpuProfiler.getInstance().setServerThread(Thread.currentThread());
+
         long now = System.nanoTime();
         long duration = now - lastTickTime;
         lastTickTime = now;
@@ -71,6 +88,74 @@ public class TickMonitor implements Runnable {
             tickDurationsNanos[tickIndex] = duration;
             tickIndex = (tickIndex + 1) % HISTORY_SIZE;
         }
+
+        worldCollectTicks++;
+        if (worldCollectTicks >= 20) {
+            worldCollectTicks = 0;
+            updateWorldSummary();
+        }
+    }
+
+    public void updateWorldSummary() {
+        try {
+            List<SparkTelemetry.WorldTelemetry> worldList = new ArrayList<>();
+            int totalChunks = 0;
+            int totalEntities = 0;
+            int totalPlayers = 0;
+
+            List<World> worlds = Bukkit.getWorlds();
+            if (worlds != null) {
+                for (World w : worlds) {
+                    String wName = w.getName();
+                    String envName = w.getEnvironment().name();
+                    int chunkCount = w.getLoadedChunks().length;
+                    List<org.bukkit.entity.Entity> entities = w.getEntities();
+                    int entCount = entities.size();
+                    int playerCount = w.getPlayers().size();
+
+                    int livingCount = 0;
+                    int itemsCount = 0;
+                    int otherCount = 0;
+
+                    for (org.bukkit.entity.Entity e : entities) {
+                        if (e instanceof Player) {
+                        } else if (e instanceof LivingEntity) {
+                            livingCount++;
+                        } else if (e instanceof Item) {
+                            itemsCount++;
+                        } else {
+                            otherCount++;
+                        }
+                    }
+
+                    totalChunks += chunkCount;
+                    totalEntities += entCount;
+                    totalPlayers += playerCount;
+
+                    worldList.add(new SparkTelemetry.WorldTelemetry(
+                            wName,
+                            envName,
+                            chunkCount,
+                            entCount,
+                            playerCount,
+                            livingCount,
+                            itemsCount,
+                            otherCount
+                    ));
+                }
+            }
+
+            this.cachedWorldSummary = new SparkTelemetry.WorldSummary(
+                    totalChunks,
+                    totalEntities,
+                    totalPlayers,
+                    worldList
+            );
+        } catch (Throwable ignored) {}
+    }
+
+    public SparkTelemetry.WorldSummary getCachedWorldSummary() {
+        return cachedWorldSummary;
     }
 
     public record MsptStats(

@@ -1037,10 +1037,18 @@ table.data-table tr:hover td {
 }
 
 .tok-search {
-  background-color: rgba(245, 158, 11, 0.4);
-  color: #FFF;
+  background-color: rgba(245, 158, 11, 0.45);
+  color: inherit;
   border-radius: 2px;
-  padding: 0 1px;
+  padding: 0;
+}
+
+.tok-search.tok-search-active {
+  background-color: #38BDF8 !important;
+  color: #0F172A !important;
+  font-weight: 700;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px #0284C7;
 }
 
 .code-editor-statusbar {
@@ -1147,4 +1155,229 @@ table.data-table tr:hover td {
   margin-top: 6px;
   width: 100%;
   justify-content: center;
+}
+
+/* ==========================================================================
+   Console Autocomplete & In-Game Command Assistant Overlay (HUD)
+   ========================================================================== */
+.console-assistant-hud {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  background: rgba(15, 23, 42, 0.96);
+  backdrop-filter: blur(12px);
+  border: 1px solid #334155;
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  z-index: 50;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: fadeIn 0.15s ease;
+}
+
+.console-hint-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(30, 41, 59, 0.9);
+  border-bottom: 1px solid #334155;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  color: #F8FAFC;
+  flex-wrap: wrap;
+}
+
+.console-hint-bar .hint-icon {
+  font-size: 13px;
+  color: var(--accent-amber);
+}
+
+.console-hint-bar .hint-usage {
+  font-weight: 600;
+  color: #E2E8F0;
+  display: inline-flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.console-hint-bar .syntax-param {
+  color: #38BDF8;
+  font-weight: 600;
+}
+
+.console-hint-bar .syntax-opt {
+  color: #FBBF24;
+  font-weight: 500;
+}
+
+.console-hint-bar .hint-desc {
+  font-size: 11px;
+  color: #94A3B8;
+  margin-left: auto;
+}
+
+.console-suggestions-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.suggestion-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12.5px;
+  color: #CBD5E1;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  user-select: none;
+}
+
+.suggestion-item:hover,
+.suggestion-item.active {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60A5FA;
+}
+
+.suggestion-item.active {
+  box-shadow: inset 2px 0 0 #3B82F6;
+}
+
+.suggestion-item .sug-match {
+  color: #34D399;
+  font-weight: 700;
+}
+
+.suggestion-item .sug-key-hint {
+  font-size: 10px;
+  color: #64748B;
+  background: rgba(30, 41, 59, 0.8);
+  padding: 2px 5px;
+  border-radius: 3px;
+  border: 1px solid #334155;
+}
+
+/* ==========================================================================
+   Monitoring Categories & Live Graphs
+   ========================================================================== */
+.mon-nav-pills {
+  display: flex;
+  gap: 6px;
+  background: var(--bg-subtle);
+  padding: 4px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  overflow-x: auto;
+}
+
+.mon-pill {
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: none;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.mon-pill:hover {
+  color: var(--text-main);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.mon-pill.active {
+  color: #FFF;
+  background: var(--brand-primary);
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
+}
+
+.chart-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.chart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chart-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.chart-legend {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.chart-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.chart-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.chart-canvas-wrap {
+  position: relative;
+  width: 100%;
+  height: 180px;
+}
+
+.chart-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.chart-tooltip {
+  position: absolute;
+  pointer-events: none;
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid #334155;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 11px;
+  color: #F8FAFC;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  z-index: 20;
+  white-space: nowrap;
+  display: none;
+  transform: translate(-50%, -110%);
 }

@@ -48,16 +48,16 @@ public class ConfigLoader {
         Map<String, Object> monMap = (Map<String, Object>) root.getOrDefault("monitoring", Map.of());
         Map<String, Object> logMap = (Map<String, Object>) root.getOrDefault("logging", Map.of());
 
-        boolean remoteAccess = getBoolean(secMap, "remote_access_enabled", false);
-        String host = getString(serverMap, "host", "127.0.0.1");
+        boolean remoteAccess = getBoolean(secMap, "remote_access_enabled", true);
+        String host = getString(serverMap, "host", "0.0.0.0");
         if (("0.0.0.0".equals(host) || "::".equals(host)) && !remoteAccess) {
             LOGGER.warn("Host was configured as {} but remote access is disabled. Falling back safely to 127.0.0.1", host);
             host = "127.0.0.1";
         }
 
-        int port = getInt(serverMap, "port", 8080);
+        int port = getInt(serverMap, "port", 2222);
         if (port < 1 || port > 65535) {
-            port = 8080;
+            port = 2222;
         }
 
         int sessionTimeout = getInt(secMap, "session_timeout_minutes", 60);
