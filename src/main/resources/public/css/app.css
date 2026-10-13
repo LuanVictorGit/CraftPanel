@@ -793,3 +793,254 @@ table.data-table tr:hover td {
     grid-template-columns: 1fr;
   }
 }
+
+/* ==========================================================================
+   CraftPanel Code Editor Styles
+   ========================================================================== */
+
+.code-editor-root {
+  display: flex;
+  flex-direction: column;
+  background-color: #0F172A;
+  border: 1px solid #334155;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  height: 520px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  font-family: var(--font-mono);
+}
+
+.code-editor-root.is-fullscreen {
+  height: calc(100vh - 160px) !important;
+}
+
+.modal-card.editor-modal-fullscreen {
+  max-width: 98vw !important;
+  width: 98vw !important;
+  max-height: 96vh !important;
+  height: 96vh !important;
+}
+
+.code-editor-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  background-color: #1E293B;
+  border-bottom: 1px solid #334155;
+  gap: 12px;
+}
+
+.code-editor-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.editor-file-badge {
+  font-size: 12px;
+  font-weight: 600;
+  color: #F8FAFC;
+  background: #334155;
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+
+.editor-lang-badge {
+  font-size: 10px;
+  font-weight: 700;
+  color: #38BDF8;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.code-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.editor-search-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #0F172A;
+  border: 1px solid #475569;
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+
+.editor-search-input {
+  background: transparent;
+  border: none;
+  color: #F8FAFC;
+  font-size: 11px;
+  font-family: var(--font-sans);
+  outline: none;
+  width: 140px;
+}
+
+.editor-search-count {
+  font-size: 10px;
+  color: #94A3B8;
+  padding: 0 4px;
+}
+
+.editor-tool-btn {
+  background: #334155;
+  border: 1px solid #475569;
+  color: #E2E8F0;
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s ease;
+}
+
+.editor-tool-btn:hover {
+  background: #475569;
+  color: #FFF;
+}
+
+.code-editor-workspace {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background-color: #0F172A;
+}
+
+.code-editor-gutter {
+  width: 52px;
+  background-color: #141E33;
+  border-right: 1px solid #1E293B;
+  color: #64748B;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 20px;
+  padding: 12px 0;
+  text-align: right;
+  user-select: none;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.gutter-line {
+  padding-right: 12px;
+  height: 20px;
+}
+
+.gutter-line.active-line {
+  color: #38BDF8;
+  background: rgba(56, 189, 248, 0.08);
+  font-weight: 600;
+}
+
+.code-editor-stage {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+}
+
+.code-editor-highlight,
+.code-editor-input {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  padding: 12px 14px;
+  margin: 0;
+  border: none;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 20px;
+  tab-size: 2;
+  white-space: pre;
+  word-break: normal;
+  overflow: auto;
+  box-sizing: border-box;
+}
+
+.code-editor-highlight {
+  background: transparent;
+  color: #F8FAFC;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.code-editor-highlight code {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  white-space: inherit;
+}
+
+.code-editor-input {
+  background: transparent;
+  color: transparent;
+  caret-color: #38BDF8;
+  resize: none;
+  outline: none;
+  z-index: 2;
+}
+
+.code-editor-input::selection {
+  background: rgba(56, 189, 248, 0.25);
+  color: transparent;
+}
+
+/* Syntax Token Colors */
+.tok-comment {
+  color: #6A9955 !important;
+  font-style: italic;
+}
+
+.tok-key {
+  color: #38BDF8 !important;
+  font-weight: 600;
+}
+
+.tok-string {
+  color: #FCD34D !important;
+}
+
+.tok-number {
+  color: #C084FC !important;
+}
+
+.tok-bool {
+  color: #4ADE80 !important;
+  font-weight: 600;
+}
+
+.tok-section {
+  color: #F472B6 !important;
+  font-weight: 700;
+}
+
+.tok-search {
+  background-color: rgba(245, 158, 11, 0.4);
+  color: #FFF;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+.code-editor-statusbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 14px;
+  background-color: #1E293B;
+  border-top: 1px solid #334155;
+  font-size: 11px;
+  color: #94A3B8;
+  font-family: var(--font-mono);
+}

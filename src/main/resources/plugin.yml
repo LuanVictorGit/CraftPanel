@@ -1,0 +1,21 @@
+name: CraftPanel
+version: 1.2.0
+main: br.com.craftpanel.CraftPanelPlugin
+api-version: '1.16'
+author: lHawk_
+description: Modern, secure web administration panel for Minecraft servers.
+folia-supported: true
+
+commands:
+  craftpanel:
+    description: CraftPanel administrative management command
+    permission: craftpanel.admin
+    usage: /<command> [status|url|reload|createuser]
+
+permissions:
+  craftpanel.admin:
+    description: Grants full administrative access to CraftPanel command and web panel
+    default: op
+  craftpanel.use:
+    description: Grants permission to check status and view CraftPanel web URL
+    default: op

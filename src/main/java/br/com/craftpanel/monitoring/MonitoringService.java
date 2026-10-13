@@ -55,6 +55,20 @@ public class MonitoringService {
             ping = MinecraftPing.ping("127.0.0.1", server.serverPort(), 1500);
         }
 
+        int onlinePlayers = ping.onlinePlayers();
+        int maxPlayers = ping.maxPlayers();
+        String motd = ping.motd();
+
+        try {
+            Class<?> bukkitClass = Class.forName("org.bukkit.Bukkit");
+            Object serverObj = bukkitClass.getMethod("getServer").invoke(null);
+            if (serverObj != null) {
+                onlinePlayers = ((java.util.Collection<?>) bukkitClass.getMethod("getOnlinePlayers").invoke(null)).size();
+                maxPlayers = (int) bukkitClass.getMethod("getMaxPlayers").invoke(null);
+                motd = (String) bukkitClass.getMethod("getMotd").invoke(null);
+            }
+        } catch (Throwable ignored) {}
+
         ServerMetrics metrics = new ServerMetrics(
                 server.id(),
                 state.name(),
@@ -65,10 +79,10 @@ public class MonitoringService {
                 diskUsed,
                 diskTotal,
                 uptime,
-                ping.onlinePlayers(),
-                ping.maxPlayers(),
+                onlinePlayers,
+                maxPlayers,
                 ping.pingMs(),
-                ping.motd()
+                motd
         );
 
         latestMetrics.put(server.id(), metrics);

@@ -2,16 +2,9 @@ package br.com.craftpanel.servers;
 
 import br.com.craftpanel.config.PanelConfig;
 
-import java.io.File;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.time.Instant;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
-import java.util.UUID;
 
 public class ServerService {
     private final ServerRepository serverRepo;
@@ -44,64 +37,7 @@ public class ServerService {
             String jvmArgs,
             boolean autoStart
     ) {
-        if (name == null || name.isBlank()) {
-            throw new IllegalArgumentException("Server name cannot be empty");
-        }
-        if (software == null || software.isBlank()) {
-            throw new IllegalArgumentException("Server software must be specified");
-        }
-        if (minecraftVersion == null || minecraftVersion.isBlank()) {
-            throw new IllegalArgumentException("Minecraft version must be specified");
-        }
-        if (minMemoryMb <= 0 || maxMemoryMb < minMemoryMb) {
-            throw new IllegalArgumentException("Invalid memory parameters");
-        }
-        if (serverPort < 1024 || serverPort > 65535) {
-            throw new IllegalArgumentException("Server port must be between 1024 and 65535");
-        }
-
-        String id = UUID.randomUUID().toString();
-        Path dirPath = (serverDir != null && !serverDir.isBlank())
-                ? Paths.get(serverDir)
-                : Paths.get(config.storage().serversDirectory(), id);
-
-        try {
-            if (!Files.exists(dirPath)) {
-                Files.createDirectories(dirPath);
-            }
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to create server directory", e);
-        }
-
-        String actualJarPath = (jarPath != null && !jarPath.isBlank())
-                ? jarPath
-                : dirPath.resolve("server.jar").toString();
-
-        String javaExec = (javaExecutable != null && !javaExecutable.isBlank())
-                ? javaExecutable
-                : "java";
-
-        Instant now = Instant.now();
-        MinecraftServer server = new MinecraftServer(
-                id,
-                name.trim(),
-                description != null ? description.trim() : "",
-                software.trim(),
-                minecraftVersion.trim(),
-                actualJarPath,
-                dirPath.toAbsolutePath().normalize().toString(),
-                javaExec,
-                minMemoryMb,
-                maxMemoryMb,
-                serverPort,
-                jvmArgs != null ? jvmArgs.trim() : "",
-                autoStart,
-                now,
-                now
-        );
-
-        serverRepo.create(server);
-        return server;
+        throw new UnsupportedOperationException("Only one server instance exists in CraftPanel (the host server).");
     }
 
     public MinecraftServer updateServer(
@@ -122,33 +58,19 @@ public class ServerService {
         MinecraftServer existing = serverRepo.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Server not found"));
 
-        if (name == null || name.isBlank()) {
-            throw new IllegalArgumentException("Server name cannot be empty");
-        }
-        if (minMemoryMb <= 0 || maxMemoryMb < minMemoryMb) {
-            throw new IllegalArgumentException("Invalid memory parameters");
-        }
-        if (serverPort < 1024 || serverPort > 65535) {
-            throw new IllegalArgumentException("Server port must be between 1024 and 65535");
-        }
-
-        String javaExec = (javaExecutable != null && !javaExecutable.isBlank())
-                ? javaExecutable
-                : existing.javaExecutable();
-
         MinecraftServer updated = new MinecraftServer(
                 existing.id(),
-                name.trim(),
-                description != null ? description.trim() : "",
-                software != null ? software.trim() : existing.software(),
-                minecraftVersion != null ? minecraftVersion.trim() : existing.minecraftVersion(),
-                jarPath != null && !jarPath.isBlank() ? jarPath : existing.jarPath(),
-                serverDir != null && !serverDir.isBlank() ? serverDir : existing.serverDir(),
-                javaExec,
-                minMemoryMb,
-                maxMemoryMb,
-                serverPort,
-                jvmArgs != null ? jvmArgs.trim() : "",
+                name != null && !name.isBlank() ? name.trim() : existing.name(),
+                description != null ? description.trim() : existing.description(),
+                software != null && !software.isBlank() ? software.trim() : existing.software(),
+                minecraftVersion != null && !minecraftVersion.isBlank() ? minecraftVersion.trim() : existing.minecraftVersion(),
+                jarPath != null && !jarPath.isBlank() ? jarPath.trim() : existing.jarPath(),
+                existing.serverDir(),
+                javaExecutable != null && !javaExecutable.isBlank() ? javaExecutable.trim() : existing.javaExecutable(),
+                minMemoryMb > 0 ? minMemoryMb : existing.minMemoryMb(),
+                maxMemoryMb >= minMemoryMb ? maxMemoryMb : existing.maxMemoryMb(),
+                serverPort > 0 ? serverPort : existing.serverPort(),
+                jvmArgs != null ? jvmArgs.trim() : existing.jvmArgs(),
                 autoStart,
                 existing.createdAt(),
                 Instant.now()
@@ -159,22 +81,6 @@ public class ServerService {
     }
 
     public void deleteServer(String id, boolean deleteFiles) {
-        MinecraftServer server = serverRepo.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Server not found"));
-
-        serverRepo.delete(id);
-
-        if (deleteFiles && server.serverDir() != null) {
-            try {
-                Path path = Paths.get(server.serverDir());
-                if (Files.exists(path)) {
-                    try (var stream = Files.walk(path)) {
-                        stream.sorted(Comparator.reverseOrder())
-                                .map(Path::toFile)
-                                .forEach(File::delete);
-                    }
-                }
-            } catch (IOException ignored) {}
-        }
+        throw new UnsupportedOperationException("The host server cannot be deleted.");
     }
 }

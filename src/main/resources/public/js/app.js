@@ -20,7 +20,7 @@ class AppState {
     this.currentUser = null;
     this.currentRole = null;
     this.currentPermissions = [];
-    this.activeServerId = localStorage.getItem('craftpanel_active_server') || null;
+    this.activeServerId = 'local';
     this.currentView = 'dashboard';
     this.eventsWs = null;
     this.activeTasks = [];
@@ -269,20 +269,17 @@ async function populateServerSelector() {
 
   try {
     const servers = await api.get('/api/servers');
-    select.innerHTML = `<option value="">${i18n.t('selectServerPrompt')}</option>` +
-      servers.map(s => `<option value="${s.id}">${escapeHtml(s.name)} (:${s.serverPort})</option>`).join('');
-
-    if (state.activeServerId && servers.some(s => s.id === state.activeServerId)) {
-      select.value = state.activeServerId;
-    } else if (servers.length > 0) {
-      state.setActiveServer(servers[0].id);
+    if (servers.length > 0) {
+      const s = servers[0];
+      select.innerHTML = `<option value="${s.id}">${escapeHtml(s.name)} (:${s.serverPort})</option>`;
+      state.setActiveServer(s.id);
+    } else {
+      select.innerHTML = `<option value="local">Host Server</option>`;
+      state.setActiveServer('local');
     }
-
-    select.addEventListener('change', (e) => {
-      state.setActiveServer(e.target.value || null);
-      state.navigateTo(state.currentView);
-    });
-  } catch (e) {}
+  } catch (e) {
+    state.setActiveServer('local');
+  }
 }
 
 function setupHeaderQuickControls() {

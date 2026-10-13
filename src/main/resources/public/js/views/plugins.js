@@ -3,11 +3,7 @@ import { toast, modal, formatBytes, escapeHtml } from '../ui.js';
 import { i18n } from '../i18n.js';
 
 export async function renderPlugins(root, state) {
-  const serverId = state.activeServerId;
-  if (!serverId) {
-    root.innerHTML = `<div class="card" style="text-align:center;padding:48px;"><p style="font-weight:600;">${i18n.t('selectServerPrompt')}</p></div>`;
-    return;
-  }
+  const serverId = state.activeServerId || 'local';
 
   root.innerHTML = `
     <div style="display:flex;flex-direction:column;gap:16px;">
@@ -19,12 +15,16 @@ export async function renderPlugins(root, state) {
         </div>
 
         <div style="display:flex;align-items:center;gap:8px;">
-          <button class="btn btn-secondary btn-sm" id="btn-goto-modrinth">
-            <svg style="width:14px;height:14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m10 15 5-3-5-3v6Z"/></svg>
-            ${i18n.t('searchModrinth')}
+          <button class="btn btn-primary btn-sm" id="btn-open-install-plugin">
+            <svg style="width:14px;height:14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            ${i18n.t('installPlugin')}
           </button>
-          <label class="btn btn-primary btn-sm" style="cursor:pointer;">
-            <svg style="width:14px;height:14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
+          <button class="btn btn-secondary btn-sm" id="btn-check-updates">
+            <svg style="width:14px;height:14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+            Check Updates
+          </button>
+          <label class="btn btn-secondary btn-sm" style="cursor:pointer;">
+            <svg style="width:14px;height:14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
             ${i18n.t('installLocalJar')}
             <input type="file" id="plugins-upload-input" accept=".jar" style="display:none;">
           </label>
@@ -40,7 +40,8 @@ export async function renderPlugins(root, state) {
     </div>
   `;
 
-  document.getElementById('btn-goto-modrinth')?.addEventListener('click', () => state.navigateTo('modrinth'));
+  document.getElementById('btn-open-install-plugin')?.addEventListener('click', () => openInstallPluginModal(serverId));
+  document.getElementById('btn-check-updates')?.addEventListener('click', () => checkPluginUpdates(serverId));
   document.getElementById('plugins-upload-input')?.addEventListener('change', (e) => handlePluginUpload(e, serverId));
 
   await loadPlugins(serverId);
@@ -63,11 +64,11 @@ function renderPluginsTable(serverId, plugins) {
     container.innerHTML = `
       <div style="text-align:center;padding:48px;color:var(--text-muted);">
         <p style="font-weight:600;font-size:15px;margin-bottom:4px;">No plugins installed</p>
-        <p style="font-size:13px;margin-bottom:16px;">Download plugins directly from the Modrinth store or upload your own .jar files.</p>
-        <button class="btn btn-primary" id="btn-empty-modrinth">${i18n.t('searchModrinth')}</button>
+        <p style="font-size:13px;margin-bottom:16px;">Download plugins directly from the Modrinth catalog or upload your own .jar files.</p>
+        <button class="btn btn-primary" id="btn-empty-install">${i18n.t('installPlugin')}</button>
       </div>
     `;
-    document.getElementById('btn-empty-modrinth')?.addEventListener('click', () => window.appState.navigateTo('modrinth'));
+    document.getElementById('btn-empty-install')?.addEventListener('click', () => openInstallPluginModal(serverId));
     return;
   }
 
@@ -146,6 +147,184 @@ function renderPluginsTable(serverId, plugins) {
       }, true);
     });
   });
+}
+
+function openInstallPluginModal(serverId) {
+  modal.open({
+    title: i18n.t('installPlugin'),
+    wide: true,
+    contentHtml: `
+      <div style="display:flex;flex-direction:column;gap:16px;">
+        <div style="display:flex;gap:8px;border-bottom:1px solid var(--border);padding-bottom:10px;">
+          <button class="btn btn-sm btn-primary" id="tab-btn-modrinth" style="flex:1;">Modrinth Store</button>
+          <button class="btn btn-sm btn-secondary" id="tab-btn-upload" style="flex:1;">Upload .jar</button>
+        </div>
+
+        <!-- Tab 1: Modrinth Store -->
+        <div id="tab-content-modrinth" style="display:flex;flex-direction:column;gap:12px;">
+          <div style="display:flex;gap:8px;">
+            <input type="text" id="modal-modrinth-search" class="form-input" placeholder="Search Modrinth (e.g. EssentialsX, LuckPerms, Vault, Chunky)..." style="flex:1;">
+            <button class="btn btn-primary btn-sm" id="modal-btn-search">Search</button>
+          </div>
+          <div id="modal-modrinth-results" style="max-height:360px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding-right:4px;">
+            <div style="text-align:center;padding:24px;color:var(--text-muted);">Type a plugin name or search above</div>
+          </div>
+        </div>
+
+        <!-- Tab 2: Upload JAR -->
+        <div id="tab-content-upload" style="display:none;flex-direction:column;gap:12px;">
+          <div id="modal-drop-zone" style="border:2px dashed var(--border);border-radius:8px;padding:36px;text-align:center;cursor:pointer;background:var(--bg-card);">
+            <svg style="width:36px;height:36px;color:var(--text-muted);margin:0 auto 10px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            <p style="font-weight:600;font-size:14px;color:var(--text-main);margin-bottom:4px;">Click to select or drag and drop a plugin .jar file</p>
+            <p style="font-size:12px;color:var(--text-muted);">Supports Bukkit, Spigot, Paper and Folia plugins</p>
+            <input type="file" id="modal-file-input" accept=".jar" style="display:none;">
+          </div>
+        </div>
+      </div>
+    `,
+    footerButtons: [
+      { text: 'Close', className: 'btn-secondary', onClick: (close) => close() }
+    ]
+  });
+
+  const tabBtnModrinth = document.getElementById('tab-btn-modrinth');
+  const tabBtnUpload = document.getElementById('tab-btn-upload');
+  const tabContentModrinth = document.getElementById('tab-content-modrinth');
+  const tabContentUpload = document.getElementById('tab-content-upload');
+  const searchInput = document.getElementById('modal-modrinth-search');
+  const searchBtn = document.getElementById('modal-btn-search');
+  const resultsContainer = document.getElementById('modal-modrinth-results');
+  const dropZone = document.getElementById('modal-drop-zone');
+  const fileInput = document.getElementById('modal-file-input');
+
+  tabBtnModrinth?.addEventListener('click', () => {
+    tabBtnModrinth.className = 'btn btn-sm btn-primary';
+    tabBtnUpload.className = 'btn btn-sm btn-secondary';
+    tabContentModrinth.style.display = 'flex';
+    tabContentUpload.style.display = 'none';
+  });
+
+  tabBtnUpload?.addEventListener('click', () => {
+    tabBtnUpload.className = 'btn btn-sm btn-primary';
+    tabBtnModrinth.className = 'btn btn-sm btn-secondary';
+    tabContentUpload.style.display = 'flex';
+    tabContentModrinth.style.display = 'none';
+  });
+
+  const performModalSearch = async (query) => {
+    if (!resultsContainer) return;
+    resultsContainer.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text-muted);">Searching Modrinth...</div>';
+    try {
+      const res = await api.get('/api/modrinth/search', {
+        query: query || undefined,
+        limit: 15
+      });
+      const hits = res.hits || [];
+      if (hits.length === 0) {
+        resultsContainer.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text-muted);">No plugins found for this search.</div>';
+        return;
+      }
+      resultsContainer.innerHTML = hits.map(hit => `
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;background:var(--bg-main);border:1px solid var(--border);border-radius:6px;">
+          <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+            ${hit.icon_url ? `<img src="${hit.icon_url}" style="width:36px;height:36px;border-radius:6px;flex-shrink:0;">` : `<div style="width:36px;height:36px;border-radius:6px;background:var(--border);flex-shrink:0;"></div>`}
+            <div style="min-width:0;">
+              <div style="display:flex;align-items:center;gap:6px;">
+                <span style="font-weight:600;font-size:13px;color:var(--text-main);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(hit.title)}</span>
+                <span style="font-size:10px;color:var(--text-muted);">by ${escapeHtml(hit.author)}</span>
+              </div>
+              <p style="font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:2px 0 0 0;">${escapeHtml(hit.description || '')}</p>
+            </div>
+          </div>
+          <button class="btn btn-primary btn-sm btn-modal-install" data-project="${hit.project_id}" data-name="${escapeHtml(hit.title)}" style="flex-shrink:0;">
+            Install
+          </button>
+        </div>
+      `).join('');
+
+      resultsContainer.querySelectorAll('.btn-modal-install').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const projId = btn.dataset.project;
+          const projName = btn.dataset.name;
+          btn.disabled = true;
+          btn.innerText = 'Installing...';
+          try {
+            const versions = await api.get(`/api/modrinth/project/${projId}/versions`, { serverId });
+            if (!versions || versions.length === 0) {
+              toast.error('No compatible versions found');
+              btn.disabled = false;
+              btn.innerText = 'Install';
+              return;
+            }
+            const firstVer = versions[0].version || versions[0];
+            const primaryFile = (firstVer.files && firstVer.files.length > 0) ? firstVer.files.find(f => f.primary) || firstVer.files[0] : null;
+            if (!primaryFile) {
+              toast.error('No downloadable file in release');
+              btn.disabled = false;
+              btn.innerText = 'Install';
+              return;
+            }
+            await api.post(`/api/servers/${serverId}/modrinth/install`, {
+              fileUrl: primaryFile.url,
+              filename: primaryFile.filename,
+              hash: primaryFile.hashes?.sha512 || primaryFile.hashes?.sha1 || '',
+              projectName: projName
+            });
+            btn.innerText = 'Installed!';
+            btn.className = 'btn btn-secondary btn-sm';
+            toast.success(`${projName} installed successfully!`);
+            loadPlugins(serverId);
+          } catch (err) {
+            btn.disabled = false;
+            btn.innerText = 'Install';
+            toast.error('Install failed: ' + err.message);
+          }
+        });
+      });
+    } catch (e) {
+      resultsContainer.innerHTML = `<div style="text-align:center;padding:24px;color:var(--accent-rose);">Error: ${escapeHtml(e.message)}</div>`;
+    }
+  };
+
+  searchBtn?.addEventListener('click', () => performModalSearch(searchInput?.value.trim()));
+  searchInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') performModalSearch(searchInput?.value.trim());
+  });
+
+  dropZone?.addEventListener('click', () => fileInput?.click());
+  fileInput?.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const formData = new FormData();
+    formData.append('file', file);
+    toast.info(`Uploading ${file.name}...`);
+    try {
+      await api.upload(`/api/servers/${serverId}/plugins/upload`, formData);
+      toast.success('Plugin installed successfully!');
+      loadPlugins(serverId);
+    } catch (err) {
+      toast.error('Upload failed: ' + err.message);
+    }
+  });
+
+  // Load default top plugins for initial convenience
+  performModalSearch('');
+}
+
+async function checkPluginUpdates(serverId) {
+  toast.info('Checking for plugin updates on Modrinth...');
+  try {
+    const res = await api.post(`/api/servers/${serverId}/modrinth/check-updates`);
+    const updates = res.updates || [];
+    if (updates.length === 0) {
+      toast.success('All installed plugins are up to date!');
+    } else {
+      toast.info(`Found updates for ${updates.length} plugins!`);
+      loadPlugins(serverId);
+    }
+  } catch (e) {
+    toast.error('Check updates failed: ' + e.message);
+  }
 }
 
 async function handlePluginUpload(event, serverId) {

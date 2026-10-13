@@ -12,6 +12,7 @@ import br.com.craftpanel.users.Permission;
 import br.com.craftpanel.users.User;
 import br.com.craftpanel.users.UserService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.javalin.websocket.WsConfig;
 import io.javalin.websocket.WsContext;
 import org.slf4j.Logger;
@@ -24,7 +25,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class ConsoleWebSocketHandler {
     private static final Logger LOGGER = LoggerFactory.getLogger(ConsoleWebSocketHandler.class);
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = new ObjectMapper().registerModule(new JavaTimeModule());
 
     private final AuthService authService;
     private final UserService userService;
@@ -49,7 +50,8 @@ public class ConsoleWebSocketHandler {
 
     public void configure(WsConfig ws) {
         ws.onConnect(ctx -> {
-            String serverId = ctx.pathParam("serverId");
+            String rawServerId = ctx.pathParam("serverId");
+            String serverId = (rawServerId == null || rawServerId.isBlank() || "undefined".equalsIgnoreCase(rawServerId) || "null".equalsIgnoreCase(rawServerId)) ? "local" : rawServerId;
             User user = authenticate(ctx);
 
             if (user == null) {
@@ -58,13 +60,16 @@ public class ConsoleWebSocketHandler {
                 return;
             }
 
-            if (!userService.hasServerPermission(user, serverId, Permission.CONSOLE_VIEW)) {
+            if (!userService.hasServerPermission(user, serverId, Permission.CONSOLE_VIEW) && !userService.hasServerPermission(user, "local", Permission.CONSOLE_VIEW)) {
                 ctx.send(MAPPER.writeValueAsString(Map.of("type", "error", "message", "Permission denied: console.view")));
                 ctx.closeSession();
                 return;
             }
 
             Optional<MinecraftServer> serverOpt = serverService.getServer(serverId);
+            if (serverOpt.isEmpty()) {
+                serverOpt = serverService.getServer("local");
+            }
             if (serverOpt.isEmpty()) {
                 ctx.send(MAPPER.writeValueAsString(Map.of("type", "error", "message", "Server not found")));
                 ctx.closeSession();
@@ -128,6 +133,9 @@ public class ConsoleWebSocketHandler {
 
             if (command != null && !command.isBlank()) {
                 ServerProcess proc = processManager.getProcess(client.serverId());
+                if (proc == null) {
+                    proc = processManager.getProcess("local");
+                }
                 if (proc != null) {
                     try {
                         proc.sendCommand(command.trim());

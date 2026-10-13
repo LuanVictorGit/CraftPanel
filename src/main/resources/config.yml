@@ -1,0 +1,77 @@
+# ==============================================================================
+# CraftPanel Web Configuration File
+# Modern, lightweight, secure web administration panel for Minecraft servers.
+# ==============================================================================
+
+# Language and localization settings.
+# Default language: "en" (English). Supported options: "en" (English), "pt" (Portuguese).
+language: "en"
+
+# Web server HTTP and network binding settings.
+server:
+  # The IP address the panel binds to.
+  # Default is "127.0.0.1" (loopback only for local security).
+  # Set to "0.0.0.0" only if remote_access_enabled is true.
+  host: "127.0.0.1"
+
+  # The HTTP port the panel listens on.
+  # Valid range: 1024-65535.
+  port: 8080
+
+# Security and session policy settings.
+security:
+  # Enables binding to non-loopback addresses (e.g. 0.0.0.0 or LAN IP).
+  # Remote access must remain disabled until explicitly authorized.
+  remote_access_enabled: false
+
+  # Time in minutes before an inactive session expires.
+  # Default is 60 minutes.
+  session_timeout_minutes: 60
+
+  # Whether to enforce the Secure flag on authentication cookies.
+  # Set to true when running behind an HTTPS reverse proxy or SSL certificate.
+  require_secure_cookies: false
+
+  # Maximum failed login attempts allowed per IP before temporary lockout.
+  max_failed_login_attempts: 5
+
+  # Lockout duration in minutes after exceeding max failed login attempts.
+  lockout_duration_minutes: 15
+
+# Persistent storage and directories configuration.
+storage:
+  # Base directory for CraftPanel runtime data.
+  data_directory: "./data"
+
+  # Path to SQLite database file.
+  database: "./data/database.db"
+
+  # Directory where server backups are stored.
+  backup_directory: "./data/backups"
+
+  # Directory where managed Minecraft server instances are created.
+  servers_directory: "./data/servers"
+
+# Modrinth official API integration settings.
+modrinth:
+  # Enables searching, browsing, and installing plugins via Modrinth API.
+  enabled: true
+
+  # Custom User-Agent header sent to the Modrinth API.
+  user_agent: "CraftPanel-Web/1.0 (contact: minebuilders.com.br/discord)"
+
+  # Modrinth API base URL.
+  api_url: "https://api.modrinth.com/v2"
+
+# Real-time resource monitoring settings.
+monitoring:
+  # Interval in seconds between background metrics collections.
+  refresh_interval_seconds: 3
+
+  # Maximum number of historical metric data points retained per server.
+  max_history_points: 60
+
+# Application logging configuration.
+logging:
+  # Log level threshold. Supported values: TRACE, DEBUG, INFO, WARN, ERROR.
+  level: "INFO"

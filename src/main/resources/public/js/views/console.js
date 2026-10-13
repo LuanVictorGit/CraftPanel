@@ -9,16 +9,7 @@ let historyIndex = -1;
 let autoscrollEnabled = true;
 
 export async function renderConsole(root, state) {
-  const serverId = state.activeServerId;
-  if (!serverId) {
-    root.innerHTML = `
-      <div class="card" style="text-align:center;padding:48px;">
-        <p style="font-size:15px;font-weight:600;color:var(--text-main);">${i18n.t('selectServerPrompt')}</p>
-        <p style="font-size:13px;color:var(--text-muted);margin-top:4px;">Please select an active server from the top sidebar to view its console.</p>
-      </div>
-    `;
-    return;
-  }
+  const serverId = state.activeServerId || 'local';
 
   root.innerHTML = `
     <div style="display:flex;flex-direction:column;gap:16px;">
@@ -138,6 +129,35 @@ export async function renderConsole(root, state) {
 
   activeWs.connect();
 
+  function formatConsoleMessage(raw) {
+    if (!raw) return '';
+    let str = escapeHtml(raw);
+    str = str.replace(/\u001b\[0?m/g, '</span>');
+    str = str.replace(/\u001b\[0;31(?:;1)?m/g, '<span style="color:#F87171;">');
+    str = str.replace(/\u001b\[0;32(?:;1)?m/g, '<span style="color:#4ADE80;">');
+    str = str.replace(/\u001b\[0;33(?:;1)?m/g, '<span style="color:#FBBF24;">');
+    str = str.replace(/\u001b\[0;34(?:;1)?m/g, '<span style="color:#60A5FA;">');
+    str = str.replace(/\u001b\[0;35(?:;1)?m/g, '<span style="color:#C084FC;">');
+    str = str.replace(/\u001b\[0;36(?:;1)?m/g, '<span style="color:#38BDF8;">');
+    str = str.replace(/\u001b\[0;37(?:;1)?m/g, '<span style="color:#F1F5F9;">');
+    str = str.replace(/\u001b\[1;30m/g, '<span style="color:#94A3B8;">');
+    str = str.replace(/\u001b\[[0-9;]*m/g, '');
+
+    const mcColors = {
+      '0': '#000000', '1': '#0000AA', '2': '#00AA00', '3': '#00AAAA',
+      '4': '#AA0000', '5': '#AA00AA', '6': '#FFAA00', '7': '#AAAAAA',
+      '8': '#555555', '9': '#5555FF', 'a': '#55FF55', 'b': '#55FFFF',
+      'c': '#FF5555', 'd': '#FF55FF', 'e': '#FFFF55', 'f': '#FFFFFF'
+    };
+    str = str.replace(/§([0-9a-f])/gi, (match, code) => {
+      const col = mcColors[code.toLowerCase()] || '#FFFFFF';
+      return `<span style="color:${col};">`;
+    });
+    str = str.replace(/§[rR]/g, '</span>');
+    str = str.replace(/§[l-okL-OK]/g, '');
+    return str;
+  }
+
   function appendLine(lineData) {
     if (!outputArea) return;
     const div = document.createElement('div');
@@ -148,7 +168,7 @@ export async function renderConsole(root, state) {
 
     div.innerHTML = `
       <span class="console-time">${time}</span>
-      <span class="console-msg ${lvl}">${escapeHtml(lineData.line || '')}</span>
+      <span class="console-msg ${lvl}">${formatConsoleMessage(lineData.line || '')}</span>
     `;
 
     outputArea.appendChild(div);

@@ -8,12 +8,9 @@ export async function renderServers(root, state, params = {}) {
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
         <div>
           <h3 style="font-size:18px;font-weight:700;color:var(--text-main);">${i18n.t('servers')}</h3>
-          <p style="font-size:13px;color:var(--text-muted);">${i18n.t('instancesOverview')}</p>
+          <p style="font-size:13px;color:var(--text-muted);">${i18n.t('singleInstanceDesc')}</p>
         </div>
-        <button class="btn btn-primary" id="btn-open-create-server">
-          <svg style="width:16px;height:16px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          ${i18n.t('newInstance')}
-        </button>
+        <span class="badge green" style="padding:6px 14px;font-size:12px;font-weight:600;">${i18n.t('hostInstanceBadge')}</span>
       </div>
 
       <div class="card" style="padding:0;overflow:hidden;">
@@ -32,13 +29,8 @@ export async function renderServers(root, state, params = {}) {
     </div>
   `;
 
-  document.getElementById('btn-open-create-server')?.addEventListener('click', () => openCreateServerModal(state));
   document.getElementById('btn-refresh-servers')?.addEventListener('click', () => loadServersTable(state));
   document.getElementById('servers-search-input')?.addEventListener('input', (e) => filterServers(e.target.value));
-
-  if (params.openCreateModal) {
-    openCreateServerModal(state);
-  }
 
   await loadServersTable(state);
 }

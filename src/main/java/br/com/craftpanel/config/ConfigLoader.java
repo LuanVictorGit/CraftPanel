@@ -82,7 +82,10 @@ public class ConfigLoader {
         ensureDirectoryExists(backupDir);
         ensureDirectoryExists(serversDir);
 
+        String language = getString(root, "language", "en");
+
         return new PanelConfig(
+                language,
                 new PanelConfig.ServerSettings(host, port),
                 new PanelConfig.SecuritySettings(remoteAccess, sessionTimeout, secureCookies, maxFailedLogin, lockoutMinutes),
                 new PanelConfig.StorageSettings(dataDir, dbPath, backupDir, serversDir),

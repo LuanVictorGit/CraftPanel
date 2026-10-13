@@ -55,10 +55,7 @@ export async function renderDashboard(root, state) {
             <h3 class="card-title">${i18n.t('activeInstances')}</h3>
             <span class="card-subtitle">${i18n.t('instancesOverview')}</span>
           </div>
-          <button class="btn btn-primary btn-sm" id="dash-btn-new-server">
-            <svg style="width:14px;height:14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            ${i18n.t('newInstance')}
-          </button>
+          <span class="badge green" style="padding:4px 10px;font-size:12px;font-weight:600;">${i18n.t('hostInstanceBadge')}</span>
         </div>
 
         <div id="dash-servers-list">
@@ -67,10 +64,6 @@ export async function renderDashboard(root, state) {
       </div>
     </div>
   `;
-
-  document.getElementById('dash-btn-new-server')?.addEventListener('click', () => {
-    state.navigateTo('servers', { openCreateModal: true });
-  });
 
   await loadDashboardData(state);
 }

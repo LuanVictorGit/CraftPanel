@@ -1,6 +1,7 @@
 package br.com.craftpanel.config;
 
 public record PanelConfig(
+        String language,
         ServerSettings server,
         SecuritySettings security,
         StorageSettings storage,
@@ -8,6 +9,17 @@ public record PanelConfig(
         MonitoringSettings monitoring,
         LoggingSettings logging
 ) {
+    public PanelConfig(
+            ServerSettings server,
+            SecuritySettings security,
+            StorageSettings storage,
+            ModrinthSettings modrinth,
+            MonitoringSettings monitoring,
+            LoggingSettings logging
+    ) {
+        this("en", server, security, storage, modrinth, monitoring, logging);
+    }
+
     public record ServerSettings(String host, int port) {}
     public record SecuritySettings(
             boolean remoteAccessEnabled,

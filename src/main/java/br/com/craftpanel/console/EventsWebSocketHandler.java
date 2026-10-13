@@ -7,6 +7,7 @@ import br.com.craftpanel.tasks.TaskManager;
 import br.com.craftpanel.users.User;
 import br.com.craftpanel.users.UserService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.javalin.websocket.WsConfig;
 import io.javalin.websocket.WsContext;
 import org.slf4j.Logger;
@@ -19,7 +20,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class EventsWebSocketHandler implements TaskManager.TaskListener {
     private static final Logger LOGGER = LoggerFactory.getLogger(EventsWebSocketHandler.class);
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = new ObjectMapper().registerModule(new JavaTimeModule());
 
     private final AuthService authService;
     private final UserService userService;

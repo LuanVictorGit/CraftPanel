@@ -1,15 +1,12 @@
 import { api } from '../api.js';
 import { toast, modal, formatBytes, escapeHtml } from '../ui.js';
 import { i18n } from '../i18n.js';
+import { CodeEditor } from '../editor.js';
 
 let currentPath = '';
 
 export async function renderFiles(root, state) {
-  const serverId = state.activeServerId;
-  if (!serverId) {
-    root.innerHTML = `<div class="card" style="text-align:center;padding:48px;"><p style="font-weight:600;">${i18n.t('selectServerPrompt')}</p></div>`;
-    return;
-  }
+  const serverId = state.activeServerId || 'local';
 
   root.innerHTML = `
     <div style="display:flex;flex-direction:column;gap:16px;">
@@ -177,14 +174,13 @@ async function openFileEditor(serverId, path) {
   try {
     const res = await api.get(`/api/servers/${serverId}/files/read`, { path });
     const content = res.content || '';
+    let editorInstance = null;
 
     modal.open({
       title: `${i18n.t('editingFile')}: ${path}`,
       wide: true,
       contentHtml: `
-        <div style="display:flex;flex-direction:column;gap:8px;">
-          <textarea id="editor-textarea" style="width:100%;height:450px;font-family:var(--font-mono);font-size:12.5px;padding:12px;background:#0F172A;color:#F8FAFC;border:1px solid #334155;border-radius:6px;outline:none;resize:vertical;">${escapeHtml(content)}</textarea>
-        </div>
+        <div id="code-editor-mount" style="min-height:520px;"></div>
       `,
       footerButtons: [
         { text: i18n.t('cancel'), className: 'btn-secondary', onClick: (close) => close() },
@@ -192,7 +188,8 @@ async function openFileEditor(serverId, path) {
           text: i18n.t('saveFile'),
           className: 'btn-primary',
           onClick: async (close) => {
-            const newContent = document.getElementById('editor-textarea').value;
+            if (!editorInstance) return;
+            const newContent = editorInstance.getValue();
             try {
               await api.post(`/api/servers/${serverId}/files/write`, { path, content: newContent });
               toast.success('File saved successfully');
@@ -204,6 +201,22 @@ async function openFileEditor(serverId, path) {
         }
       ]
     });
+
+    const mount = document.getElementById('code-editor-mount');
+    if (mount) {
+      editorInstance = new CodeEditor(mount, {
+        content,
+        filename: path.split('/').pop() || path,
+        onSave: async (val) => {
+          try {
+            await api.post(`/api/servers/${serverId}/files/write`, { path, content: val });
+            toast.success('File saved successfully (Ctrl+S)');
+          } catch (e) {
+            toast.error(e.message);
+          }
+        }
+      });
+    }
   } catch (e) {
     toast.error('Could not open file: ' + e.message);
   }

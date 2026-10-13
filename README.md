@@ -1,23 +1,48 @@
 # CraftPanel Web
 
-CraftPanel Web is a modern, lightweight, secure, and production-ready web administration panel for Minecraft servers, built with **Java 21**, **Javalin**, **SQLite**, and vanilla **HTML5/CSS3/JavaScript**.
+CraftPanel Web is a modern, lightweight, secure, and production-ready Minecraft server administration web panel and native Bukkit/Spigot/Paper/Folia plugin built with **Java 21**, **Javalin 6**, **SQLite**, and vanilla **HTML5/CSS3/JavaScript**.
 
-## Key Features
+CraftPanel Web is designed to run directly inside the Minecraft server (or standalone), managing the **host server instance** where the plugin is active with zero external daemon dependencies.
 
-- **Process Lifecycle Management**: Real process control using `ProcessBuilder` (Start, Graceful Stop via `stop` command, Force Kill, Restart, Auto-restart detection).
-- **Interactive Real-Time Console**: WebSocket-powered live terminal with ANSI color rendering, autoscroll pause, search, and safe command execution (`console.execute` permission required).
-- **Secure File Manager**: Full file browser, multi-line editor for Minecraft configurations (`server.properties`, `bukkit.yml`, `spigot.yml`, `paper-global.yml`), upload, download, move, rename, delete, protected with strict canonical path traversal validation.
-- **Plugin Management & Official Modrinth Integration**: Automatic detection and metadata extraction of JAR plugins (`plugin.yml` / `paper-plugin.yml`), search, filter by version (1.8 to latest) and loader (Paper, Folia, Purpur, Spigot, Bukkit), 1-click install with checksum verification.
-- **Server Installer**: Automated setup wizard supporting PaperMC (Paper, Folia), Purpur, and Vanilla with automatic EULA acceptance and JVM memory configuration.
-- **Role-Based Access Control (RBAC)**: Individual accounts, customizable roles, and per-server granular permission assignment.
-- **Real-Time Monitoring**: CPU, JVM & host RAM, disk storage, and live player count via Server List Ping handshake.
-- **Backups & Recovery**: ZIP archive generation, checksum verification, and assisted restore.
-- **Persistent Audit Logging**: Track all administrative and file operations.
+## Version
 
-## Requirements
+Current version: **1.2.0**
 
-- **Java Development Kit (JDK)**: Java 21 or later.
-- **Apache Maven**: 3.8+ (for building).
+## Version History
+
+- **1.2.0**: Added advanced syntax-highlighted code editor with synchronized line numbers, search/replace, and color-coded comments/keys/values for YAML, properties, and JSON. Added dedicated `+ Install Plugin` modal in Plugins tab with Modrinth 1-click installer and drag-and-drop local JAR upload. Fixed server restart button with detached background process launcher on Windows and Linux. Fixed real-time console WebSocket streaming and added ANSI/Minecraft color code formatting. Updated MineBuilders `DESCRIPTION.md` to English.
+- **1.1.0**: Enforce single-instance host server architecture (managing the host server where the plugin is running). Added native Spigot, Paper, and Folia plugin wrapper (`CraftPanelPlugin`) with `/craftpanel` commands (`status`, `url`, `reload`, `createuser`), live `latest.log` tailing to WebSocket console, thread-safe command execution via Bukkit main thread, language toggle (en/pt), and MineBuilders documentation update.
+- **1.0.0**: Initial release with full Javalin web server, SQLite database, RBAC, interactive WebSocket console, secure file manager, Modrinth v2 plugin store, backups, and real-time resource monitoring.
+
+## Supported Platforms & Minecraft Versions
+
+- **Minecraft Versions**: 1.16.5 through 26.2 (latest).
+- **Server Platforms**: Spigot, Paper, Purpur, Folia (Folia-supported flag enabled).
+- **Java Requirement**: Java 21 LTS or newer.
+
+## Architecture
+
+CraftPanel Web operates in **Single-Instance Host Mode**:
+- The web panel directly manages the host server process in which the plugin is installed.
+- **Console**: Streams live output from `logs/latest.log` via WebSocket and dispatches commands directly through `Bukkit.dispatchCommand()`.
+- **Files**: Browses and edits configurations (`server.properties`, `bukkit.yml`, `spigot.yml`, `paper-global.yml`) securely sandboxed to the server root.
+- **Plugins**: Manages installed JAR files in `plugins/` and installs new plugins directly via official Modrinth API.
+- **Monitoring**: Live metrics for CPU, JVM memory, disk space, and connected players (`Bukkit.getOnlinePlayers()`).
+- **Backups**: Creates ZIP archives of worlds, configurations, and plugins into `data/backups/`.
+
+## In-Game & Console Commands
+
+| Command | Permission | Description |
+|---|---|---|
+| `/craftpanel status` | `craftpanel.use` | Displays web server status, address, and host details |
+| `/craftpanel url` | `craftpanel.use` | Displays the direct browser URL |
+| `/craftpanel reload` | `craftpanel.admin` | Reloads `config.yml` and restarts the web service |
+| `/craftpanel createuser <user> <pass> [role]` | `craftpanel.admin` | Immediately creates a panel user (`admin`, `moderator`, `viewer`) |
+
+## Permissions
+
+- `craftpanel.admin`: Full administrative access (default: `op`).
+- `craftpanel.use`: Access to status and URL commands (default: `op`).
 
 ## Building from Source
 
@@ -25,29 +50,29 @@ CraftPanel Web is a modern, lightweight, secure, and production-ready web admini
 mvn clean package
 ```
 
-The executable standalone fat JAR will be generated at:
+The resulting shaded artifact will be generated at:
 ```bash
-target/craftpanel-web.jar
+target/CraftPanel.jar
 ```
 
-## Running the Application
+## Installation & Deployment
 
-```bash
-java -jar target/craftpanel-web.jar
-```
+1. Copy `target/CraftPanel.jar` into the `plugins/` directory of your Minecraft server.
+2. Start or restart the server.
+3. Access the web panel at `http://127.0.0.1:8080`.
+4. Create the initial administrator account on the setup screen or via console:
+   ```bash
+   /craftpanel createuser admin my_secure_password admin
+   ```
 
-Access the panel in your browser at:
-```
-http://127.0.0.1:8080
-```
+## Configuration (config.yml)
 
-On first launch, you will be prompted to create the initial Administrator account.
-
-## Configuration
-
-Configuration is stored in `craftpanel.yml`. Key defaults:
+Configuration is located in `plugins/CraftPanel/config.yml`:
 
 ```yaml
+# Language: "en" (English) or "pt" (Portuguese)
+language: "en"
+
 server:
   host: "127.0.0.1"
   port: 8080
@@ -56,15 +81,16 @@ security:
   remote_access_enabled: false
   session_timeout_minutes: 60
   require_secure_cookies: false
+  max_failed_login_attempts: 5
+  lockout_duration_minutes: 15
 
 storage:
   data_directory: "./data"
   database: "./data/database.db"
   backup_directory: "./data/backups"
-  servers_directory: "./data/servers"
 ```
 
-## Author
+## Author & Contact
 
 - **Author**: `lHawk_`
 - **Discord Community**: [https://minebuilders.com.br/discord](https://minebuilders.com.br/discord)

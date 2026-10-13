@@ -12,6 +12,7 @@ import br.com.craftpanel.users.Permission;
 import br.com.craftpanel.users.User;
 import br.com.craftpanel.users.UserService;
 import com.fasterxml.jackson.databind.JsonNode;
+import io.javalin.http.BadRequestResponse;
 import io.javalin.http.Context;
 import io.javalin.http.NotFoundResponse;
 
@@ -52,7 +53,7 @@ public class ServerController {
         for (MinecraftServer server : all) {
             if (userService.hasServerPermission(user, server.id(), Permission.SERVER_VIEW)) {
                 ServerProcess proc = processManager.getProcess(server);
-                ProcessState state = proc != null ? proc.getState() : ProcessState.STOPPED;
+                ProcessState state = proc != null ? proc.getState() : ProcessState.RUNNING;
                 ServerMetrics metrics = monitoringService.collectMetrics(server);
 
                 Map<String, Object> map = new HashMap<>();
@@ -89,7 +90,7 @@ public class ServerController {
 
         Map<String, Object> res = new HashMap<>();
         res.put("server", server);
-        res.put("status", proc != null ? proc.getState().name() : ProcessState.STOPPED.name());
+        res.put("status", proc != null ? proc.getState().name() : ProcessState.RUNNING.name());
         res.put("uptimeSeconds", proc != null ? proc.getUptime().toSeconds() : 0);
         res.put("metrics", metrics);
 
@@ -97,27 +98,7 @@ public class ServerController {
     }
 
     public void create(Context ctx) {
-        authMiddleware.requirePermission(ctx, Permission.SERVER_CREATE);
-        User user = AuthMiddleware.requireUser(ctx);
-        JsonNode body = ctx.bodyAsClass(JsonNode.class);
-
-        MinecraftServer created = serverService.createServer(
-                body.path("name").asText(),
-                body.path("description").asText(""),
-                body.path("software").asText("paper"),
-                body.path("minecraftVersion").asText("1.20.4"),
-                body.path("jarPath").asText(null),
-                body.path("serverDir").asText(null),
-                body.path("javaExecutable").asText("java"),
-                body.path("minMemoryMb").asInt(1024),
-                body.path("maxMemoryMb").asInt(2048),
-                body.path("serverPort").asInt(25565),
-                body.path("jvmArgs").asText(""),
-                body.path("autoStart").asBoolean(false)
-        );
-
-        auditService.log(user.id(), user.username(), "SERVER_CREATE", "SERVER", created.id(), "Created server " + created.name(), ctx.ip(), "SUCCESS");
-        ctx.status(201).json(created);
+        throw new BadRequestResponse("Only one server instance exists in CraftPanel (the host server where the plugin is running).");
     }
 
     public void update(Context ctx) {
@@ -139,47 +120,21 @@ public class ServerController {
                 body.path("maxMemoryMb").asInt(2048),
                 body.path("serverPort").asInt(25565),
                 body.path("jvmArgs").asText(""),
-                body.path("autoStart").asBoolean(false)
+                body.path("autoStart").asBoolean(true)
         );
 
-        auditService.log(user.id(), user.username(), "SERVER_UPDATE", "SERVER", id, "Updated server " + updated.name(), ctx.ip(), "SUCCESS");
+        auditService.log(user.id(), user.username(), "SERVER_UPDATE", "SERVER", id, "Updated host server configuration", ctx.ip(), "SUCCESS");
         ctx.json(updated);
     }
 
     public void delete(Context ctx) {
-        String id = ctx.pathParam("id");
-        authMiddleware.requireServerPermission(ctx, id, Permission.SERVER_DELETE);
-        User user = AuthMiddleware.requireUser(ctx);
-
-        ServerProcess proc = processManager.getProcess(id);
-        if (proc != null && (proc.getState() == ProcessState.RUNNING || proc.getState() == ProcessState.STARTING)) {
-            proc.kill();
-        }
-        processManager.removeProcess(id);
-
-        boolean deleteFiles = ctx.queryParamAsClass("deleteFiles", Boolean.class).getOrDefault(false);
-        serverService.deleteServer(id, deleteFiles);
-
-        auditService.log(user.id(), user.username(), "SERVER_DELETE", "SERVER", id, "Deleted server (files deleted: " + deleteFiles + ")", ctx.ip(), "SUCCESS");
-        ctx.json(Map.of("success", true));
+        throw new BadRequestResponse("The host server cannot be deleted.");
     }
 
     public void start(Context ctx) {
         String id = ctx.pathParam("id");
         authMiddleware.requireServerPermission(ctx, id, Permission.SERVER_START);
-        User user = AuthMiddleware.requireUser(ctx);
-
-        MinecraftServer server = serverService.getServer(id).orElseThrow(() -> new NotFoundResponse("Server not found"));
-        ServerProcess proc = processManager.getProcess(server);
-
-        try {
-            proc.start();
-            auditService.log(user.id(), user.username(), "SERVER_START", "SERVER", id, "Started server process", ctx.ip(), "SUCCESS");
-            ctx.json(Map.of("success", true, "status", proc.getState().name()));
-        } catch (Exception e) {
-            auditService.log(user.id(), user.username(), "SERVER_START_FAILED", "SERVER", id, e.getMessage(), ctx.ip(), "FAILURE");
-            ctx.status(400).json(Map.of("error", e.getMessage()));
-        }
+        ctx.json(Map.of("success", true, "message", "Server is already running", "status", "RUNNING"));
     }
 
     public void stop(Context ctx) {
@@ -200,11 +155,11 @@ public class ServerController {
         authMiddleware.requireServerPermission(ctx, id, Permission.SERVER_RESTART);
         User user = AuthMiddleware.requireUser(ctx);
 
-        MinecraftServer server = serverService.getServer(id).orElseThrow(() -> new NotFoundResponse("Server not found"));
-        ServerProcess proc = processManager.getProcess(server);
-        proc.restart(25);
-
-        auditService.log(user.id(), user.username(), "SERVER_RESTART", "SERVER", id, "Requested server restart", ctx.ip(), "SUCCESS");
+        ServerProcess proc = processManager.getProcess(id);
+        if (proc != null) {
+            proc.restart(25);
+            auditService.log(user.id(), user.username(), "SERVER_RESTART", "SERVER", id, "Requested server restart", ctx.ip(), "SUCCESS");
+        }
         ctx.json(Map.of("success", true));
     }
 
@@ -216,7 +171,7 @@ public class ServerController {
         ServerProcess proc = processManager.getProcess(id);
         if (proc != null) {
             proc.kill();
-            auditService.log(user.id(), user.username(), "SERVER_KILL", "SERVER", id, "Forcibly killed server process", ctx.ip(), "SUCCESS");
+            auditService.log(user.id(), user.username(), "SERVER_KILL", "SERVER", id, "Forcibly stopped server process", ctx.ip(), "SUCCESS");
         }
         ctx.json(Map.of("success", true));
     }
@@ -226,7 +181,7 @@ public class ServerController {
         authMiddleware.requireServerPermission(ctx, id, Permission.SERVER_VIEW);
 
         ServerProcess proc = processManager.getProcess(id);
-        ProcessState state = proc != null ? proc.getState() : ProcessState.STOPPED;
+        ProcessState state = proc != null ? proc.getState() : ProcessState.RUNNING;
         long uptime = proc != null ? proc.getUptime().toSeconds() : 0;
         int exitCode = proc != null ? proc.getLastExitCode() : 0;
 

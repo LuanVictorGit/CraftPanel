@@ -3,6 +3,10 @@
 # Modern, lightweight, secure web administration panel for Minecraft servers.
 # ==============================================================================
 
+# Language and localization settings.
+# Default language: "en" (English). Supported options: "en" (English), "pt" (Portuguese).
+language: "en"
+
 # Web server HTTP and network binding settings.
 server:
   # The IP address the panel binds to.

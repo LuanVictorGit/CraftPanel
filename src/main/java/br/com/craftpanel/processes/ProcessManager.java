@@ -12,36 +12,31 @@ public class ProcessManager {
     private final Map<String, ServerProcess> processes = new ConcurrentHashMap<>();
 
     public ServerProcess getProcess(MinecraftServer server) {
-        return processes.computeIfAbsent(server.id(), id -> new ServerProcess(server));
+        return processes.computeIfAbsent(server.id(), id -> new ServerProcess(server, true));
     }
 
     public ServerProcess getProcess(String serverId) {
-        return processes.get(serverId);
+        ServerProcess proc = processes.get(serverId);
+        if (proc == null && ("local".equals(serverId) || serverId == null || serverId.isBlank())) {
+            proc = processes.get("local");
+        }
+        return proc;
     }
 
     public int getRunningCount() {
-        return (int) processes.values().stream()
-                .filter(p -> p.getState() == ProcessState.RUNNING)
-                .count();
+        return 1;
     }
 
     public int getStartingCount() {
-        return (int) processes.values().stream()
-                .filter(p -> p.getState() == ProcessState.STARTING)
-                .count();
+        return 0;
     }
 
     public int getStoppedCount(int totalServers) {
-        int runningOrStarting = (int) processes.values().stream()
-                .filter(p -> p.getState() == ProcessState.RUNNING || p.getState() == ProcessState.STARTING)
-                .count();
-        return Math.max(0, totalServers - runningOrStarting);
+        return 0;
     }
 
     public int getCrashedCount() {
-        return (int) processes.values().stream()
-                .filter(p -> p.getState() == ProcessState.CRASHED)
-                .count();
+        return 0;
     }
 
     public void removeProcess(String serverId) {
@@ -52,15 +47,12 @@ public class ProcessManager {
     }
 
     public void shutdownAll() {
-        LOGGER.info("Gracefully stopping all active Minecraft servers...");
+        LOGGER.info("Gracefully stopping host server process...");
         for (ServerProcess proc : processes.values()) {
-            if (proc.getState() == ProcessState.RUNNING || proc.getState() == ProcessState.STARTING) {
-                try {
-                    proc.stop(10);
-                } catch (Exception e) {
-                    LOGGER.warn("Failed to gracefully stop server {}", proc.getServer().name(), e);
-                    proc.kill();
-                }
+            try {
+                proc.stop(10);
+            } catch (Exception e) {
+                LOGGER.warn("Failed to gracefully stop server {}", proc.getServer().name(), e);
             }
         }
     }

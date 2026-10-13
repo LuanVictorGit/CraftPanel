@@ -1,131 +1,169 @@
 <center>
 <h2>CraftPanel Web</h2>
-<p><strong>Painel Web Moderno, Seguro e Completo para Administração de Servidores Minecraft</strong></p>
-<p><em>Desenvolvido por lHawk_</em></p>
+<p><strong>Modern, Lightweight, and Comprehensive Web Administration Panel for Minecraft Servers</strong></p>
+<p><em>Developed by lHawk_</em></p>
 </center>
 
 <hr>
 
-<h3>1. Visão Geral</h3>
-<p>O <strong>CraftPanel Web</strong> é uma aplicação web autônoma projetada para hospedar, monitorar e administrar servidores Minecraft diretamente pelo navegador, com foco em facilidade de uso, alta performance e controle granular de processos locais.</p>
+<h3>1. Overview</h3>
+<p><strong>CraftPanel Web</strong> is a native, production-grade Minecraft plugin and integrated web administration panel designed to manage, monitor, and configure your Minecraft server directly from any web browser. Inspired by the clean usability and structure of Pterodactyl Panel, CraftPanel Web operates natively from inside your server without requiring separate daemon processes, external panel infrastructures, or heavy background runtimes.</p>
 
-<p>Inspirado na usabilidade dos principais painéis de hospedagem do mercado, o CraftPanel Web elimina a necessidade de comandos manuais no terminal, oferecendo uma interface limpa, intuitiva e totalmente em tempo real.</p>
+<p>Installed directly into your server's <code>plugins/</code> folder, CraftPanel Web embeds a high-performance Javalin web server powered by Java 21 and a persistent local SQLite database. It gives server administrators, staff members, and friends full control over console commands, configuration files, plugin management, Modrinth downloads, system health, and backups through a clean, responsive web interface.</p>
 
 <hr>
 
-<h3>2. Funcionalidades Principais</h3>
+<h3>2. Key Features</h3>
 <ul>
-<li><strong>Gerenciamento Completo de Ciclo de Vida:</strong> Inicie, pare de forma graciosa (comando <code>stop</code>), reinicie ou encerre processos de servidores com detecção automática de falhas.</li>
-<li><strong>Console Interativo em Tempo Real:</strong> Terminal web com WebSockets, suporte a cores, busca de logs, pausa de rolagem e execução segura de comandos autorizados.</li>
-<li><strong>Gerenciador de Arquivos Avançado:</strong> Navegação rápida, visualização e edição de configurações (<code>server.properties</code>, <code>bukkit.yml</code>, <code>spigot.yml</code>, <code>paper-global.yml</code>), criação de pastas, uploads e downloads, com proteção rigorosa contra path traversal.</li>
-<li><strong>Gerenciador de Plugins &amp; Loja Modrinth:</strong> Detecção automática de metadados de plugins JAR (nome, versão, autor, dependências), upload manual e integração oficial com a API do Modrinth para pesquisa, filtros de versão e instalação em um clique.</li>
-<li><strong>Matriz de Compatibilidade Inteligente:</strong> Suporte comprovado de versões do Minecraft 1.8 até a versão mais recente, avaliando plataformas Paper, Purpur, Spigot, Bukkit e Folia.</li>
-<li><strong>Instalador de Servidores Automatizado:</strong> Assistente integrado para download direto de builds oficiais de Paper, Purpur, Folia e Vanilla, com configuração de memória JVM e aceitação de EULA.</li>
-<li><strong>Controle de Acesso Granular (RBAC):</strong> Criação de usuários, funções personalizadas e concessão de permissões específicas por servidor.</li>
-<li><strong>Monitoramento em Tempo Real:</strong> Gráficos e indicadores contínuos de uso de CPU, memória RAM da JVM, espaço em disco e jogadores conectados.</li>
-<li><strong>Backups &amp; Restauração:</strong> Criação de cópias compactadas em ZIP com verificação de integridade e restauração assistida.</li>
-<li><strong>Auditoria Completa:</strong> Registro persistente de todas as ações administrativas, alterações de arquivos e eventos de segurança.</li>
+<li><strong>Single Native Instance:</strong> Directly controls the running Minecraft host instance, eliminating the need for complex multi-node daemons or remote agent setups.</li>
+<li><strong>Interactive Real-Time Console:</strong> High-performance WebSocket terminal with ANSI and Minecraft color code parsing, live log streaming, instant search, toggleable autoscroll, and command execution on the server thread with Folia support.</li>
+<li><strong>Advanced Syntax-Highlighted File Editor:</strong> Full-featured in-browser code editor featuring synchronized line numbers, search and replace with match counts, Tab key indentation, and syntax highlighting for YAML (<code>config.yml</code>, <code>spigot.yml</code>, <code>paper-global.yml</code>), Properties (<code>server.properties</code>), JSON, and script files.</li>
+<li><strong>Plugin Manager &amp; Modrinth Integration:</strong> Browse, enable, disable, and delete installed plugins with automatic backup preservation. Discover, inspect, and install plugins directly from the official Modrinth API v2 with one click.</li>
+<li><strong>Granular Role-Based Access Control (RBAC):</strong> Create and assign user accounts with custom roles (Admin, Server Manager, Operator, Viewer) and fine-grained permissions. Add accounts directly in-game or from console using <code>/craftpanel createuser</code>.</li>
+<li><strong>Real-Time Monitoring &amp; Telemetry:</strong> Live metrics tracking CPU load, JVM memory allocation, free disk space, server uptime, and online player count.</li>
+<li><strong>Integrated Backup Engine:</strong> Create automated or manual ZIP archives of server files with integrity hashing and instant web download.</li>
+<li><strong>Persistent Audit Logging:</strong> Comprehensive record of all logins, file modifications, console commands, and permission changes stored in local SQLite database.</li>
+<li><strong>Internationalization (i18n):</strong> English by default with instant runtime language switching to Portuguese.</li>
 </ul>
 
 <hr>
 
-<h3>3. Compatibilidade de Plataformas e Versões</h3>
+<h3>3. Platform Compatibility</h3>
 <table>
 <tr>
-<th>Plataforma</th>
-<th>Versões Suportadas</th>
-<th>Status de Compatibilidade</th>
+<th>Platform</th>
+<th>Supported Versions</th>
+<th>Compatibility Status</th>
 </tr>
 <tr>
 <td><strong>Paper</strong></td>
-<td>1.8.8 até a versão mais recente</td>
-<td>Totalmente Compatível</td>
+<td>1.16.5 to 26.2+</td>
+<td>Fully Compatible</td>
+</tr>
+<tr>
+<td><strong>Spigot</strong></td>
+<td>1.16.5 to 26.2+</td>
+<td>Fully Compatible</td>
 </tr>
 <tr>
 <td><strong>Purpur</strong></td>
-<td>1.16.5 até a versão mais recente</td>
-<td>Totalmente Compatível</td>
+<td>1.16.5 to 26.2+</td>
+<td>Fully Compatible</td>
 </tr>
 <tr>
 <td><strong>Folia</strong></td>
-<td>1.19.4 até a versão mais recente</td>
-<td>Totalmente Compatível</td>
-</tr>
-<tr>
-<td><strong>Spigot / Bukkit</strong></td>
-<td>1.8 até a versão mais recente</td>
-<td>Totalmente Compatível</td>
-</tr>
-<tr>
-<td><strong>Vanilla</strong></td>
-<td>1.8 até a versão mais recente</td>
-<td>Compatível (Processo e Arquivos)</td>
+<td>1.19.4 to 26.2+</td>
+<td>Fully Compatible (Region Schedulers)</td>
 </tr>
 </table>
 
 <hr>
 
-<h3>4. Requisitos do Sistema</h3>
-<ul>
-<li><strong>Java Runtime:</strong> Java 21 LTS ou superior instalado no host.</li>
-<li><strong>Sistemas Operacionais:</strong> Windows 10/11, Windows Server, Linux (Ubuntu, Debian, CentOS, Fedora).</li>
-<li><strong>Navegadores:</strong> Chrome, Firefox, Edge, Safari e navegadores modernos com suporte a WebSockets e ES Modules.</li>
-<li><strong>Dependências Externas:</strong> Nenhuma dependência externa obrigatória. SQLite e Jetty já estão embutidos no pacote distribuível.</li>
-</ul>
+<h3>4. Commands and Permissions</h3>
+<table>
+<tr>
+<th>Command</th>
+<th>Permission</th>
+<th>Description</th>
+</tr>
+<tr>
+<td><code>/craftpanel status</code></td>
+<td><code>craftpanel.use</code></td>
+<td>Displays the status of the web server, HTTP address, and running host information.</td>
+</tr>
+<tr>
+<td><code>/craftpanel url</code></td>
+<td><code>craftpanel.use</code></td>
+<td>Shows the direct web address to access the administration panel.</td>
+</tr>
+<tr>
+<td><code>/craftpanel reload</code></td>
+<td><code>craftpanel.admin</code></td>
+<td>Reloads <code>config.yml</code> and restarts the embedded HTTP server.</td>
+</tr>
+<tr>
+<td><code>/craftpanel createuser &lt;username&gt; &lt;password&gt; [role]</code></td>
+<td><code>craftpanel.admin</code></td>
+<td>Instantly creates a new web panel account with the specified role (admin, moderator, viewer).</td>
+</tr>
+</table>
 
 <hr>
 
-<h3>5. Instalação e Inicialização</h3>
+<h3>5. Step-by-Step Installation</h3>
 <ol>
-<li>Baixe o artefato executável <code>craftpanel-web.jar</code>.</li>
-<li>Abra o terminal no diretório do arquivo.</li>
-<li>Execute o comando de inicialização:
-<pre><code>java -jar craftpanel-web.jar</code></pre>
-</li>
-<li>Acesse o painel no navegador através do endereço local padrão:
+<li>Download the latest <code>CraftPanel.jar</code> file.</li>
+<li>Place the jar into your server's <code>plugins/</code> folder.</li>
+<li>Start or restart your Minecraft server.</li>
+<li>Open your web browser and navigate to:
 <pre><code>http://127.0.0.1:8080</code></pre>
 </li>
-<li>Na primeira execução, o assistente inicial solicitará a criação da conta do primeiro administrador.</li>
+<li>On first startup, the panel will prompt you to create the master administrator account.</li>
+<li>Log in and start administering your server!</li>
 </ol>
 
 <hr>
 
-<h3>6. Configurações (craftpanel.yml)</h3>
-<p>As configurações principais podem ser ajustadas no arquivo <code>craftpanel.yml</code> gerado automaticamente na raiz:</p>
-<pre><code>server:
+<h3>6. Configuration Reference (config.yml)</h3>
+<p>CraftPanel Web creates a fully commented <code>config.yml</code> file in its plugin folder:</p>
+<pre><code># Language setting ("en" for English, "pt" for Portuguese)
+language: "en"
+
+# HTTP network binding
+server:
   host: "127.0.0.1"
   port: 8080
 
+# Security policy
 security:
   remote_access_enabled: false
   session_timeout_minutes: 60
   require_secure_cookies: false
+  max_failed_login_attempts: 5
+  lockout_duration_minutes: 15
 
-storage:
-  data_directory: "./data"
-  database: "./data/database.db"
-  backup_directory: "./data/backups"
-  servers_directory: "./data/servers"
-
+# Modrinth official API integration
 modrinth:
   enabled: true
-  user_agent: "CraftPanel-Web/1.0"
+  user_agent: "CraftPanel-Web/1.2 (contact: lHawk_)"
+  api_url: "https://api.modrinth.com/v2"
 
+# System monitoring
 monitoring:
-  refresh_interval_seconds: 3
-
-logging:
-  level: "INFO"</code></pre>
+  refresh_interval_seconds: 3</code></pre>
 
 <hr>
 
-<h3>7. Segurança e Boas Práticas</h3>
-<blockquote>
-<p><strong>Aviso de Segurança:</strong> Por padrão, o painel escuta exclusivamente na interface de loopback (<code>127.0.0.1</code>). A exposição para redes locais ou públicas (<code>0.0.0.0</code>) exige autorização explícita na configuração. Recomenda-se o uso de túneis autenticados ou VPN para conexões remotas seguras.</p>
-</blockquote>
+<h3>7. Performance and Security Architecture</h3>
+<ul>
+<li><strong>Asynchronous Thread Isolation:</strong> The Javalin web server, WebSocket handlers, and SQLite database transactions run strictly on background worker threads, never blocking server ticks.</li>
+<li><strong>Folia-Compatible Scheduling:</strong> Console command dispatching uses Folia's <code>GlobalRegionScheduler</code> when running on Folia, ensuring complete thread safety.</li>
+<li><strong>Path Traversal Defense:</strong> All file reading, writing, renaming, and uploading routines canonicalize paths and verify boundaries to prevent unauthorized filesystem access.</li>
+<li><strong>Argon2 / BCrypt Password Hashing:</strong> User passwords are encrypted using modern cryptographic salt hashing.</li>
+<li><strong>Zero Bloat:</strong> The panel frontend is built with pure vanilla ES6 JavaScript and CSS, requiring no heavy NPM build steps or node dependencies.</li>
+</ul>
 
 <hr>
 
-<h3>8. Suporte e Comunidade</h3>
-<p>Para dúvidas, relatórios e suporte da comunidade, acesse:</p>
-<p><a href="https://minebuilders.com.br/discord">Comunidade MineBuilders</a></p>
+<h3>8. Frequently Asked Questions (FAQ)</h3>
+<details>
+<summary><strong>How do I allow my friends or staff to access the panel remotely?</strong></summary>
+<p>By default, the panel binds to <code>127.0.0.1</code> for security. To allow remote access, set <code>remote_access_enabled: true</code> and change <code>host: "0.0.0.0"</code> in <code>config.yml</code>, then configure your firewall or port forwarding for port 8080.</p>
+</details>
+
+<details>
+<summary><strong>Can I install plugins from Modrinth without restarting?</strong></summary>
+<p>Yes. Installing plugins via the Modrinth store downloads the official JAR directly to your <code>plugins/</code> folder. You can load it using your favorite plugin manager or reload command.</p>
+</details>
+
+<details>
+<summary><strong>Where is panel data stored?</strong></summary>
+<p>All user accounts, sessions, roles, audit logs, and settings are stored locally in <code>plugins/CraftPanel/database.db</code> via SQLite.</p>
+</details>
+
+<hr>
+
+<center>
+<p><strong>Need help or support?</strong></p>
+<p>Author: <strong>lHawk_</strong> | Community Discord: <a href="https://minebuilders.com.br/discord">https://minebuilders.com.br/discord</a></p>
+</center>
