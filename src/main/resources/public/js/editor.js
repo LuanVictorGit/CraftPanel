@@ -152,15 +152,15 @@ export class CodeEditor {
     this.searchInput?.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
-        if (e.shiftKey) this.prevMatch();
-        else this.nextMatch();
+        if (e.shiftKey) this.prevMatch(false);
+        else this.nextMatch(false);
       } else if (e.key === 'Escape') {
         this.closeSearch();
       }
     });
 
-    this.container.querySelector('#editor-search-next')?.addEventListener('click', () => this.nextMatch());
-    this.container.querySelector('#editor-search-prev')?.addEventListener('click', () => this.prevMatch());
+    this.container.querySelector('#editor-search-next')?.addEventListener('click', () => this.nextMatch(false));
+    this.container.querySelector('#editor-search-prev')?.addEventListener('click', () => this.prevMatch(false));
 
     this.container.querySelector('#editor-toggle-fullscreen')?.addEventListener('click', () => {
       this.toggleFullscreen();
@@ -412,7 +412,7 @@ export class CodeEditor {
     this.searchMatches = matches;
     if (matches.length > 0) {
       this.currentMatchIndex = 0;
-      this.jumpToMatch(0);
+      this.jumpToMatch(0, false);
     } else {
       this.currentMatchIndex = -1;
       if (this.searchCount) this.searchCount.innerText = '0/0';
@@ -420,25 +420,33 @@ export class CodeEditor {
     }
   }
 
-  nextMatch() {
+  nextMatch(shouldFocus = false) {
     if (this.searchMatches.length === 0) return;
     this.currentMatchIndex = (this.currentMatchIndex + 1) % this.searchMatches.length;
-    this.jumpToMatch(this.currentMatchIndex);
+    this.jumpToMatch(this.currentMatchIndex, shouldFocus);
   }
 
-  prevMatch() {
+  prevMatch(shouldFocus = false) {
     if (this.searchMatches.length === 0) return;
     this.currentMatchIndex = (this.currentMatchIndex - 1 + this.searchMatches.length) % this.searchMatches.length;
-    this.jumpToMatch(this.currentMatchIndex);
+    this.jumpToMatch(this.currentMatchIndex, shouldFocus);
   }
 
-  jumpToMatch(index) {
+  jumpToMatch(index, shouldFocus = false) {
     if (index < 0 || index >= this.searchMatches.length) return;
     this.currentMatchIndex = index;
     const start = this.searchMatches[index];
     const len = this.searchQuery.length;
-    this.textarea.focus();
+
+    const isSearchFocused = (document.activeElement === this.searchInput);
+
+    if (shouldFocus) {
+      this.textarea.focus();
+    }
     this.textarea.setSelectionRange(start, start + len);
+    if (!shouldFocus && isSearchFocused && document.activeElement !== this.searchInput) {
+      this.searchInput.focus();
+    }
     this.updateCursorPos();
 
     const val = this.textarea.value;

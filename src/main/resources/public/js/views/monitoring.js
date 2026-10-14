@@ -23,6 +23,17 @@ export async function renderMonitoring(root, state) {
 
   localHistory = [];
 
+  state.currentCleanup = () => {
+    if (activeWs) {
+      activeWs.close();
+      activeWs = null;
+    }
+    if (fallbackInterval) {
+      clearInterval(fallbackInterval);
+      fallbackInterval = null;
+    }
+  };
+
   root.innerHTML = `
     <div style="display:flex;flex-direction:column;gap:18px;">
       <!-- Header -->

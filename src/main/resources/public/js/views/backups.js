@@ -14,7 +14,7 @@ export async function renderBackups(root, state) {
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
         <div>
           <h3 style="font-size:18px;font-weight:700;color:var(--text-main);">${i18n.t('backups')}</h3>
-          <p style="font-size:13px;color:var(--text-muted);">Create full compressed ZIP snapshots and restore server state safely</p>
+          <p style="font-size:13px;color:var(--text-muted);">${i18n.t('backupsSubtitle')}</p>
         </div>
 
         <button class="btn btn-primary" id="btn-open-create-backup">
@@ -52,8 +52,8 @@ function renderBackupsTable(serverId, backups) {
   if (backups.length === 0) {
     container.innerHTML = `
       <div style="text-align:center;padding:48px;color:var(--text-muted);">
-        <p style="font-weight:600;font-size:15px;margin-bottom:4px;">No backups created yet</p>
-        <p style="font-size:13px;margin-bottom:16px;">Create a backup to protect your worlds, configs, and plugins from unexpected data loss.</p>
+        <p style="font-weight:600;font-size:15px;margin-bottom:4px;">${i18n.t('noBackupsYet')}</p>
+        <p style="font-size:13px;margin-bottom:16px;">${i18n.t('noBackupsDesc')}</p>
         <button class="btn btn-primary" id="btn-empty-backup">${i18n.t('createBackup')}</button>
       </div>
     `;
@@ -66,12 +66,12 @@ function renderBackupsTable(serverId, backups) {
       <table class="data-table">
         <thead>
           <tr>
-            <th>Archive Name</th>
-            <th>Notes</th>
-            <th>Size</th>
-            <th>Created By</th>
-            <th>Timestamp</th>
-            <th style="text-align:right;">Actions</th>
+            <th>${i18n.t('archiveName')}</th>
+            <th>${i18n.t('notes')}</th>
+            <th>${i18n.t('size')}</th>
+            <th>${i18n.t('createdBy')}</th>
+            <th>${i18n.t('timestamp')}</th>
+            <th style="text-align:right;">${i18n.t('actions')}</th>
           </tr>
         </thead>
         <tbody>

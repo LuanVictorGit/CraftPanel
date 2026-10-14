@@ -142,6 +142,13 @@ public class CraftPanelServer {
         MonitoringService monitoringService = new MonitoringService(processManager);
         TaskManager taskManager = new TaskManager(db);
         AuditService auditService = new AuditService(db);
+        try {
+            Class.forName("org.eclipse.jetty.io.ManagedSelector$CloseConnections");
+            Class.forName("org.eclipse.jetty.io.ManagedSelector$StopSelector");
+            Class.forName("org.eclipse.jetty.io.ManagedSelector$DestroyEndPoint");
+            Class.forName("org.eclipse.jetty.servlet.BaseHolder$Wrapped");
+            Class.forName("org.eclipse.jetty.servlet.FilterMapping");
+        } catch (Throwable ignored) {}
 
         if (this.authService.isSetupRequired()) {
             String key = "CP-" + java.util.UUID.randomUUID().toString().substring(0, 8).toUpperCase();
@@ -343,7 +350,9 @@ public class CraftPanelServer {
             processManager.shutdownAll();
         }
         if (app != null) {
-            app.stop();
+            try {
+                app.stop();
+            } catch (Throwable ignored) {}
         }
         LOGGER.info("CraftPanel Web server stopped");
     }

@@ -1,5 +1,5 @@
 name: CraftPanel
-version: 1.2.2
+version: 1.2.3
 main: br.com.craftpanel.CraftPanelPlugin
 api-version: '1.16'
 load: STARTUP

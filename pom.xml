@@ -6,7 +6,7 @@
 
     <groupId>br.com.craftpanel</groupId>
     <artifactId>craftpanel-web</artifactId>
-    <version>1.2.2</version>
+    <version>1.2.3</version>
     <packaging>jar</packaging>
 
     <name>CraftPanel Web</name>

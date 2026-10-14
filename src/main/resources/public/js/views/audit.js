@@ -8,7 +8,7 @@ export async function renderAudit(root, state) {
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
         <div>
           <h3 style="font-size:18px;font-weight:700;color:var(--text-main);">${i18n.t('auditLogs')}</h3>
-          <p style="font-size:13px;color:var(--text-muted);">Immutable audit trail recording administrative and security actions</p>
+          <p style="font-size:13px;color:var(--text-muted);">${i18n.t('auditSubtitle')}</p>
         </div>
 
         <div style="display:flex;align-items:center;gap:10px;width:320px;">
@@ -45,7 +45,7 @@ function renderAuditTable(logs) {
   if (!container) return;
 
   if (logs.length === 0) {
-    container.innerHTML = `<div style="text-align:center;padding:48px;color:var(--text-muted);">No audit events recorded</div>`;
+    container.innerHTML = `<div style="text-align:center;padding:48px;color:var(--text-muted);">${i18n.t('noAuditEvents')}</div>`;
     return;
   }
 
@@ -54,11 +54,11 @@ function renderAuditTable(logs) {
       <table class="data-table">
         <thead>
           <tr>
-            <th>Status</th>
+            <th>${i18n.t('status')}</th>
             <th>${i18n.t('action')}</th>
             <th>${i18n.t('user')}</th>
-            <th>Target</th>
-            <th>Details</th>
+            <th>${i18n.t('target')}</th>
+            <th>${i18n.t('details')}</th>
             <th>${i18n.t('ipAddress')}</th>
             <th>${i18n.t('timestamp')}</th>
           </tr>

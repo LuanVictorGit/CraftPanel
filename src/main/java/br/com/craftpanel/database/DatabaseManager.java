@@ -2,6 +2,7 @@ package br.com.craftpanel.database;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.sqlite.SQLiteConfig;
 import org.sqlite.SQLiteDataSource;
 
 import java.io.File;
@@ -24,24 +25,25 @@ public class DatabaseManager {
             parent.mkdirs();
         }
 
-        this.dataSource = new SQLiteDataSource();
+        SQLiteConfig config = new SQLiteConfig();
+        config.enforceForeignKeys(true);
+        config.setBusyTimeout(5000);
+        config.setSynchronous(SQLiteConfig.SynchronousMode.NORMAL);
+
+        this.dataSource = new SQLiteDataSource(config);
         this.dataSource.setUrl("jdbc:sqlite:" + dbPath);
         initDatabase();
     }
 
     public Connection getConnection() throws SQLException {
-        Connection conn = dataSource.getConnection();
-        try (Statement stmt = conn.createStatement()) {
-            stmt.execute("PRAGMA foreign_keys = ON;");
-            stmt.execute("PRAGMA journal_mode = WAL;");
-            stmt.execute("PRAGMA synchronous = NORMAL;");
-            stmt.execute("PRAGMA busy_timeout = 5000;");
-        }
-        return conn;
+        return dataSource.getConnection();
     }
 
     private void initDatabase() {
-        try (Connection conn = getConnection()) {
+        try (Connection conn = dataSource.getConnection()) {
+            try (Statement stmt = conn.createStatement()) {
+                stmt.execute("PRAGMA journal_mode = WAL;");
+            }
             applySchema(conn);
             seedDefaultRoles(conn);
         } catch (SQLException e) {
@@ -182,6 +184,11 @@ public class DatabaseManager {
                     value TEXT NOT NULL
                 );
             """);
+
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);");
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);");
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_audit_created_at ON audit_logs(created_at);");
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_user_server_perms ON user_server_permissions(user_id, server_id);");
         }
     }
 

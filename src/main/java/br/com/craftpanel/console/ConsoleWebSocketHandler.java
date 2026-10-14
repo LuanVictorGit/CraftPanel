@@ -191,55 +191,97 @@ public class ConsoleWebSocketHandler {
         });
     }
 
+    private static volatile Class<?> bukkitClass = null;
+    private static volatile Method getServerMethod = null;
+    private static volatile Method getConsoleSenderMethod = null;
+    private static volatile Method tabCompleteMethod = null;
+    private static volatile Method getCommandMapMethod = null;
+    private static volatile Method getKnownCommandsMethod = null;
+    private static volatile Field knownCommandsField = null;
+    private static volatile Method getCommandMethod = null;
+    private static volatile boolean reflectionInitialized = false;
+
+    private static synchronized void ensureReflectionInit() {
+        if (reflectionInitialized) return;
+        try {
+            bukkitClass = Class.forName("org.bukkit.Bukkit");
+            getServerMethod = bukkitClass.getMethod("getServer");
+            getConsoleSenderMethod = bukkitClass.getMethod("getConsoleSender");
+            Class<?> senderClass = Class.forName("org.bukkit.command.CommandSender");
+            Object server = getServerMethod.invoke(null);
+            if (server != null) {
+                tabCompleteMethod = server.getClass().getMethod("tabComplete", senderClass, String.class);
+                getCommandMapMethod = server.getClass().getMethod("getCommandMap");
+                Object cmdMap = getCommandMapMethod.invoke(server);
+                if (cmdMap != null) {
+                    try {
+                        getKnownCommandsMethod = cmdMap.getClass().getMethod("getKnownCommands");
+                    } catch (Throwable ignored) {
+                        Class<?> curr = cmdMap.getClass();
+                        while (curr != null && curr != Object.class) {
+                            try {
+                                knownCommandsField = curr.getDeclaredField("knownCommands");
+                                knownCommandsField.setAccessible(true);
+                                break;
+                            } catch (Throwable ignored2) {
+                                curr = curr.getSuperclass();
+                            }
+                        }
+                    }
+                    try {
+                        getCommandMethod = cmdMap.getClass().getMethod("getCommand", String.class);
+                    } catch (Throwable ignored) {}
+                }
+            }
+        } catch (Throwable ignored) {}
+        reflectionInitialized = true;
+    }
+
     public static List<String> resolveTabCompletions(String buffer) {
         List<String> completions = new ArrayList<>();
         if (buffer == null) buffer = "";
         String query = buffer;
 
-        try {
-            Class<?> bukkitClass = Class.forName("org.bukkit.Bukkit");
-            Object server = bukkitClass.getMethod("getServer").invoke(null);
-            Object consoleSender = bukkitClass.getMethod("getConsoleSender").invoke(null);
-            Class<?> senderClass = Class.forName("org.bukkit.command.CommandSender");
-            Method tabComplete = server.getClass().getMethod("tabComplete", senderClass, String.class);
+        ensureReflectionInit();
 
-            String cmd = query.startsWith("/") ? query : ("/" + query);
-            List<?> results = (List<?>) tabComplete.invoke(server, consoleSender, cmd);
-            if (results != null) {
-                for (Object r : results) {
-                    if (r != null) {
-                        String str = r.toString();
-                        if (str.startsWith("/") && !query.startsWith("/")) {
-                            str = str.substring(1);
-                        }
-                        completions.add(str);
-                    }
-                }
-            }
-
-            if (completions.isEmpty() && !query.startsWith("/")) {
-                results = (List<?>) tabComplete.invoke(server, consoleSender, query);
+        if (tabCompleteMethod != null && getServerMethod != null && getConsoleSenderMethod != null) {
+            try {
+                Object server = getServerMethod.invoke(null);
+                Object consoleSender = getConsoleSenderMethod.invoke(null);
+                String cmd = query.startsWith("/") ? query : ("/" + query);
+                List<?> results = (List<?>) tabCompleteMethod.invoke(server, consoleSender, cmd);
                 if (results != null) {
                     for (Object r : results) {
-                        if (r != null) completions.add(r.toString());
+                        if (r != null) {
+                            String str = r.toString();
+                            if (str.startsWith("/") && !query.startsWith("/")) {
+                                str = str.substring(1);
+                            }
+                            completions.add(str);
+                        }
                     }
                 }
-            }
-        } catch (Throwable ignored) {}
 
-        if (completions.isEmpty() && !query.contains(" ")) {
+                if (completions.isEmpty() && !query.startsWith("/")) {
+                    results = (List<?>) tabCompleteMethod.invoke(server, consoleSender, query);
+                    if (results != null) {
+                        for (Object r : results) {
+                            if (r != null) completions.add(r.toString());
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {}
+        }
+
+        if (completions.isEmpty() && !query.contains(" ") && getCommandMapMethod != null && getServerMethod != null) {
             String clean = query.startsWith("/") ? query.substring(1).toLowerCase() : query.toLowerCase();
             try {
-                Class<?> bukkitClass = Class.forName("org.bukkit.Bukkit");
-                Object server = bukkitClass.getMethod("getServer").invoke(null);
-                Object commandMap = server.getClass().getMethod("getCommandMap").invoke(server);
+                Object server = getServerMethod.invoke(null);
+                Object commandMap = getCommandMapMethod.invoke(server);
                 Map<?, ?> map = null;
-                try {
-                    Method getKnown = commandMap.getClass().getMethod("getKnownCommands");
-                    map = (Map<?, ?>) getKnown.invoke(commandMap);
-                } catch (Throwable fallback) {
-                    Field knownCommandsField = commandMap.getClass().getDeclaredField("knownCommands");
-                    knownCommandsField.setAccessible(true);
+                if (getKnownCommandsMethod != null) {
+                    map = (Map<?, ?>) getKnownCommandsMethod.invoke(commandMap);
+                } else if (knownCommandsField != null) {
                     map = (Map<?, ?>) knownCommandsField.get(commandMap);
                 }
                 if (map != null) {
@@ -269,24 +311,25 @@ public class ConsoleWebSocketHandler {
             trimmed = trimmed.substring(1);
         }
         String firstWord = trimmed.split(" ")[0].toLowerCase();
-        try {
-            Class<?> bukkitClass = Class.forName("org.bukkit.Bukkit");
-            Object server = bukkitClass.getMethod("getServer").invoke(null);
-            Object commandMap = server.getClass().getMethod("getCommandMap").invoke(server);
-            Method getCommand = commandMap.getClass().getMethod("getCommand", String.class);
-            Object cmd = getCommand.invoke(commandMap, firstWord);
-            if (cmd != null) {
-                Method getUsage = cmd.getClass().getMethod("getUsage");
-                Method getDesc = cmd.getClass().getMethod("getDescription");
-                String usage = (String) getUsage.invoke(cmd);
-                String desc = (String) getDesc.invoke(cmd);
-                return Map.of(
-                        "command", firstWord,
-                        "usage", usage != null ? usage.replace("<command>", firstWord) : ("/" + firstWord),
-                        "description", desc != null ? desc : ""
-                );
-            }
-        } catch (Throwable ignored) {}
+        ensureReflectionInit();
+        if (getServerMethod != null && getCommandMapMethod != null && getCommandMethod != null) {
+            try {
+                Object server = getServerMethod.invoke(null);
+                Object commandMap = getCommandMapMethod.invoke(server);
+                Object cmd = getCommandMethod.invoke(commandMap, firstWord);
+                if (cmd != null) {
+                    Method getUsage = cmd.getClass().getMethod("getUsage");
+                    Method getDesc = cmd.getClass().getMethod("getDescription");
+                    String usage = (String) getUsage.invoke(cmd);
+                    String desc = (String) getDesc.invoke(cmd);
+                    return Map.of(
+                            "command", firstWord,
+                            "usage", usage != null ? usage.replace("<command>", firstWord) : ("/" + firstWord),
+                            "description", desc != null ? desc : ""
+                    );
+                }
+            } catch (Throwable ignored) {}
+        }
         return Map.of();
     }
 

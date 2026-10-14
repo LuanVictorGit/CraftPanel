@@ -9,12 +9,12 @@ export async function renderSettings(root, state) {
     <div style="display:flex;flex-direction:column;gap:24px;">
       <div>
         <h3 style="font-size:18px;font-weight:700;color:var(--text-main);">${i18n.t('settings')}</h3>
-        <p style="font-size:13px;color:var(--text-muted);">Instance configuration, user credentials, and host diagnostic information</p>
+        <p style="font-size:13px;color:var(--text-muted);">${i18n.t('settingsSubtitle')}</p>
       </div>
 
       <!-- Language & Preferences Card -->
       <div class="card">
-        <h4 class="card-title" style="margin-bottom:12px;">Display & Language Preferences</h4>
+        <h4 class="card-title" style="margin-bottom:12px;">${i18n.t('displayAndLanguage')}</h4>
         <div style="max-width:320px;">
           <label class="form-label">${i18n.t('language')}</label>
           <select id="settings-lang-select" class="form-select">
@@ -29,8 +29,8 @@ export async function renderSettings(root, state) {
         <div class="card" id="instance-settings-card">
           <div class="card-header">
             <div>
-              <h4 class="card-title">Instance Configuration</h4>
-              <span class="card-subtitle">Adjust server startup parameters, memory allocation, and networking</span>
+              <h4 class="card-title">${i18n.t('instanceConfig')}</h4>
+              <span class="card-subtitle">${i18n.t('instanceConfigSubtitle')}</span>
             </div>
           </div>
 
@@ -70,13 +70,13 @@ export async function renderSettings(root, state) {
             <div style="margin-bottom:18px;display:flex;align-items:center;gap:8px;">
               <input type="checkbox" id="set-srv-autostart" style="width:16px;height:16px;">
               <label for="set-srv-autostart" style="font-size:13px;font-weight:600;cursor:pointer;">
-                Auto-start server when CraftPanel boots up
+                ${i18n.t('autoStartDesc')}
               </label>
             </div>
 
             <div style="display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--border);padding-top:16px;">
               <button type="submit" class="btn btn-primary">${i18n.t('save')}</button>
-              <button type="button" class="btn btn-danger" id="btn-delete-instance-btn">Delete Instance</button>
+              <button type="button" class="btn btn-danger" id="btn-delete-instance-btn">${i18n.t('deleteInstance')}</button>
             </div>
           </form>
         </div>
@@ -84,14 +84,14 @@ export async function renderSettings(root, state) {
 
       <!-- Security / Change Password -->
       <div class="card">
-        <h4 class="card-title" style="margin-bottom:12px;">Account Security</h4>
+        <h4 class="card-title" style="margin-bottom:12px;">${i18n.t('accountSecurity')}</h4>
         <form id="change-pwd-form" style="max-width:440px;">
           <div class="form-group">
-            <label class="form-label">Current Password</label>
+            <label class="form-label">${i18n.t('currentPassword')}</label>
             <input type="password" id="chg-old-pwd" class="form-input" required>
           </div>
           <div class="form-group">
-            <label class="form-label">New Password (min 8 chars)</label>
+            <label class="form-label">${i18n.t('newPasswordMin')}</label>
             <input type="password" id="chg-new-pwd" class="form-input" required>
           </div>
           <button type="submit" class="btn btn-secondary">${i18n.t('save')}</button>
@@ -115,7 +115,7 @@ export async function renderSettings(root, state) {
 
     try {
       await api.post('/api/auth/change-password', { oldPassword, newPassword });
-      toast.success('Password changed successfully');
+      toast.success(i18n.t('passwordChangedSuccess'));
       e.target.reset();
     } catch (err) {
       toast.error(err.message);
@@ -152,17 +152,17 @@ async function loadServerSettings(serverId, state) {
           jvmArgs: document.getElementById('set-srv-jvm').value,
           autoStart: document.getElementById('set-srv-autostart').checked
         });
-        toast.success('Instance settings saved');
+        toast.success(i18n.t('instanceSettingsSaved'));
       } catch (err) {
         toast.error(err.message);
       }
     });
 
     document.getElementById('btn-delete-instance-btn')?.addEventListener('click', () => {
-      modal.confirm('Delete Server Instance', `Permanently delete instance "${s.name}"? This will stop the process.`, async () => {
+      modal.confirm(i18n.t('deleteInstance'), `${i18n.t('deleteServerConfirm')} "${s.name}"? ${i18n.t('deleteServerDesc')}`, async () => {
         try {
           await api.delete(`/api/servers/${serverId}`, { deleteFiles: true });
-          toast.success('Server deleted');
+          toast.success(i18n.t('operationSuccess'));
           state.setActiveServer(null);
           state.navigateTo('servers');
         } catch (err) {

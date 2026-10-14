@@ -229,6 +229,14 @@ public class FileController {
         MinecraftServer server = serverService.getServer(serverId).orElseThrow(() -> new NotFoundResponse("Server not found"));
 
         String path = ctx.queryParam("path");
+        if ((path == null || path.isBlank()) && ctx.body() != null && !ctx.body().isBlank()) {
+            try {
+                JsonNode body = ctx.bodyAsClass(JsonNode.class);
+                if (body != null && body.has("path")) {
+                    path = body.path("path").asText(null);
+                }
+            } catch (Exception ignored) {}
+        }
         if (path == null || path.isBlank()) {
             ctx.status(400).json(Map.of("error", "File path parameter is required"));
             return;

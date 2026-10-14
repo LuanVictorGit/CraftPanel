@@ -248,7 +248,55 @@ const translations = {
     // Notifications
     success: "Success",
     error: "Error",
-    info: "Info"
+    info: "Info",
+
+    // Additional UI & Table Keys
+    general: "General",
+    folderEmpty: "This folder is empty",
+    confirmDeleteFile: "Are you sure you want to delete",
+    deletedSuccessfully: "Deleted successfully",
+    fileCreated: "File created successfully",
+    folderCreated: "Folder created successfully",
+    folderName: "Folder Name",
+    fileName: "Filename",
+    download: "Download",
+    fileSavedSuccessfully: "File saved successfully",
+    archiveName: "Archive Name",
+    notes: "Notes",
+    createdBy: "Created By",
+    noBackupsYet: "No backups created yet",
+    noBackupsDesc: "Create a backup to protect your worlds, configs, and plugins from unexpected data loss.",
+    backupsSubtitle: "Create full compressed ZIP snapshots and restore server state safely",
+    auditSubtitle: "Immutable audit trail recording administrative and security actions",
+    noAuditEvents: "No audit events recorded",
+    target: "Target",
+    details: "Details",
+    settingsSubtitle: "Instance configuration, user credentials, and host diagnostic information",
+    displayAndLanguage: "Display & Language Preferences",
+    instanceConfig: "Instance Configuration",
+    instanceConfigSubtitle: "Adjust server startup parameters, memory allocation, and networking",
+    autoStartDesc: "Auto-start server when CraftPanel boots up",
+    deleteInstance: "Delete Instance",
+    accountSecurity: "Account Security",
+    currentPassword: "Current Password",
+    newPasswordMin: "New Password (min 8 chars)",
+    passwordChangedSuccess: "Password changed successfully!",
+    instanceSettingsSaved: "Instance settings saved!",
+    deleteServerConfirm: "Permanently delete instance",
+    deleteServerDesc: "This will stop the process.",
+    created: "Created",
+    roleIdentifier: "Role Identifier",
+    permissionsCount: "Permissions Count",
+    systemRole: "System",
+    customRole: "Custom",
+    privileges: "privileges",
+    deleteUserConfirm: "Are you sure you want to permanently delete this user account?",
+    userDeleted: "User deleted successfully",
+    usersSubtitle: "Manage individual user accounts and individual privileges",
+    rolesSubtitle: "Predefined system roles and customizable permission templates",
+    type: "Type",
+    users: "Users & Roles",
+    audit: "Audit Logs"
   },
 
   pt: {
@@ -500,7 +548,55 @@ const translations = {
     // Notifications
     success: "Sucesso",
     error: "Erro",
-    info: "Informação"
+    info: "Informação",
+
+    // Additional UI & Table Keys
+    general: "Geral",
+    folderEmpty: "Esta pasta está vazia",
+    confirmDeleteFile: "Tem certeza de que deseja excluir",
+    deletedSuccessfully: "Excluído com sucesso",
+    fileCreated: "Arquivo criado com sucesso",
+    folderCreated: "Pasta criada com sucesso",
+    folderName: "Nome da Pasta",
+    fileName: "Nome do Arquivo",
+    download: "Baixar",
+    fileSavedSuccessfully: "Arquivo salvo com sucesso",
+    archiveName: "Nome do Arquivo",
+    notes: "Observações",
+    createdBy: "Criado Por",
+    noBackupsYet: "Nenhum backup criado até o momento",
+    noBackupsDesc: "Crie um backup para proteger seus mundos, configurações e plugins contra perdas de dados.",
+    backupsSubtitle: "Crie cópias compactadas em ZIP e restaure o estado do servidor com segurança",
+    auditSubtitle: "Registro imutável de auditoria gravando ações administrativas e de segurança",
+    noAuditEvents: "Nenhum evento de auditoria registrado",
+    target: "Alvo",
+    details: "Detalhes",
+    settingsSubtitle: "Configurações da instância, credenciais de usuário e informações de diagnóstico",
+    displayAndLanguage: "Preferências de Exibição e Idioma",
+    instanceConfig: "Configuração da Instância",
+    instanceConfigSubtitle: "Ajuste parâmetros de inicialização, alocação de memória e rede do servidor",
+    autoStartDesc: "Iniciar servidor automaticamente com o CraftPanel",
+    deleteInstance: "Excluir Instância",
+    accountSecurity: "Segurança da Conta",
+    currentPassword: "Senha Atual",
+    newPasswordMin: "Nova Senha (mínimo 8 caracteres)",
+    passwordChangedSuccess: "Senha alterada com sucesso!",
+    instanceSettingsSaved: "Configurações da instância salvas!",
+    deleteServerConfirm: "Excluir permanentemente a instância",
+    deleteServerDesc: "Esta ação encerrará o processo do servidor.",
+    created: "Criado em",
+    roleIdentifier: "Identificador da Função",
+    permissionsCount: "Quantidade de Permissões",
+    systemRole: "Sistema",
+    customRole: "Personalizada",
+    privileges: "privilégios",
+    deleteUserConfirm: "Tem certeza de que deseja excluir permanentemente esta conta de usuário?",
+    userDeleted: "Usuário excluído com sucesso",
+    usersSubtitle: "Gerencie contas de usuários e privilégios de acesso",
+    rolesSubtitle: "Funções pré-definidas do sistema e modelos de permissões",
+    type: "Tipo",
+    users: "Usuários & Funções",
+    audit: "Logs de Auditoria"
   }
 };
 
@@ -516,6 +612,7 @@ export const i18n = {
       currentLang = lang;
       localStorage.setItem('craftpanel_lang', lang);
       window.dispatchEvent(new CustomEvent('language:changed', { detail: lang }));
+      window.dispatchEvent(new CustomEvent('languagechange', { detail: lang }));
     }
   },
 

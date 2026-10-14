@@ -230,7 +230,9 @@ public class PluginManager {
         }
 
         File target = new File(pluginsDir, safeName);
-        Files.copy(in, target.toPath(), StandardCopyOption.REPLACE_EXISTING);
+        try (in) {
+            Files.copy(in, target.toPath(), StandardCopyOption.REPLACE_EXISTING);
+        }
 
         loadPluginAtRuntime(target);
         return JarMetadataExtractor.extract(target);
@@ -466,10 +468,9 @@ public class PluginManager {
                 Method getCommandMap = serverObj.getClass().getMethod("getCommandMap");
                 Object commandMap = getCommandMap.invoke(serverObj);
                 if (commandMap != null) {
-                    Field knownCommandsField = commandMap.getClass().getDeclaredField("knownCommands");
-                    knownCommandsField.setAccessible(true);
-                    Map<?, ?> knownCommands = (Map<?, ?>) knownCommandsField.get(commandMap);
-                    ClassLoader cl = target.getClass().getClassLoader();
+                    Map<String, Object> knownCommands = getKnownCommandsMap(commandMap);
+                    if (knownCommands != null) {
+                        ClassLoader cl = target.getClass().getClassLoader();
                     Class<?> picClass = null;
                     try {
                         picClass = Class.forName("org.bukkit.command.PluginIdentifiableCommand");
@@ -517,7 +518,8 @@ public class PluginManager {
                         } catch (Throwable ignored) {}
                     }
                 }
-            } catch (Throwable ignored) {}
+            }
+        } catch (Throwable ignored) {}
 
             ClassLoader classLoader = target.getClass().getClassLoader();
             if (classLoader instanceof URLClassLoader urlCl) {
@@ -539,6 +541,36 @@ public class PluginManager {
     }
 
     @SuppressWarnings("unchecked")
+    private Map<String, Object> getKnownCommandsMap(Object commandMap) {
+        if (commandMap == null) {
+            return null;
+        }
+        try {
+            Method m = commandMap.getClass().getMethod("getKnownCommands");
+            m.setAccessible(true);
+            Object res = m.invoke(commandMap);
+            if (res instanceof Map) {
+                return (Map<String, Object>) res;
+            }
+        } catch (Throwable ignored) {}
+
+        Class<?> curr = commandMap.getClass();
+        while (curr != null && curr != Object.class) {
+            try {
+                Field f = curr.getDeclaredField("knownCommands");
+                f.setAccessible(true);
+                Object res = f.get(commandMap);
+                if (res instanceof Map) {
+                    return (Map<String, Object>) res;
+                }
+            } catch (Throwable ignored) {
+                curr = curr.getSuperclass();
+            }
+        }
+        return null;
+    }
+
+    @SuppressWarnings("unchecked")
     private void registerPluginCommands(Object pluginObj) {
         if (pluginObj == null) {
             return;
@@ -552,9 +584,10 @@ public class PluginManager {
                 return;
             }
 
-            Field knownCommandsField = commandMap.getClass().getDeclaredField("knownCommands");
-            knownCommandsField.setAccessible(true);
-            Map<String, Object> knownCommands = (Map<String, Object>) knownCommandsField.get(commandMap);
+            Map<String, Object> knownCommands = getKnownCommandsMap(commandMap);
+            if (knownCommands == null) {
+                return;
+            }
 
             Method getDesc = pluginObj.getClass().getMethod("getDescription");
             Object desc = getDesc.invoke(pluginObj);

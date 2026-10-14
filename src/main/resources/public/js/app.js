@@ -24,10 +24,23 @@ class AppState {
     this.currentView = 'dashboard';
     this.eventsWs = null;
     this.activeTasks = [];
+    this.currentCleanup = null;
   }
 
   navigateTo(viewName, params = {}) {
+    if (this.currentCleanup) {
+      try { this.currentCleanup(); } catch (e) {}
+      this.currentCleanup = null;
+    }
+
     this.currentView = viewName;
+    try {
+      localStorage.setItem('craftpanel_active_view', viewName);
+      if (window.location.hash !== `#/${viewName}`) {
+        history.replaceState(null, '', `#/${viewName}`);
+      }
+    } catch (e) {}
+
     document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => {
       el.classList.toggle('active', el.dataset.view === viewName);
     });
@@ -36,6 +49,7 @@ class AppState {
     if (pageTitle) {
       pageTitle.innerText = i18n.t(viewName, viewName.charAt(0).toUpperCase() + viewName.slice(1));
     }
+    applyTranslations();
 
     const contentRoot = document.getElementById('content-root');
     if (!contentRoot) return;
@@ -226,6 +240,20 @@ window.appState = state;
 async function bootstrap() {
   applyTranslations();
 
+  const handleLanguageChange = (newLang) => {
+    const lang = newLang || i18n.getLanguage();
+    const sw1 = document.getElementById('lang-switcher');
+    if (sw1 && sw1.value !== lang) sw1.value = lang;
+    const sw2 = document.getElementById('settings-lang-select');
+    if (sw2 && sw2.value !== lang) sw2.value = lang;
+    applyTranslations();
+    const pageTitle = document.getElementById('page-title');
+    if (pageTitle && state.currentView) {
+      pageTitle.innerText = i18n.t(state.currentView, state.currentView.charAt(0).toUpperCase() + state.currentView.slice(1));
+    }
+    state.navigateTo(state.currentView);
+  };
+
   const langSwitcher = document.getElementById('lang-switcher');
   if (langSwitcher) {
     langSwitcher.value = i18n.getLanguage();
@@ -234,10 +262,8 @@ async function bootstrap() {
     });
   }
 
-  window.addEventListener('languagechange', () => {
-    applyTranslations();
-    state.navigateTo(state.currentView);
-  });
+  window.addEventListener('language:changed', (e) => handleLanguageChange(e.detail));
+  window.addEventListener('languagechange', () => handleLanguageChange(i18n.getLanguage()));
 
   try {
     const setupStatus = await api.get('/api/setup/status');
@@ -278,6 +304,7 @@ function showScreen(name) {
   document.getElementById('setup-screen').style.display = (name === 'setup') ? 'flex' : 'none';
   document.getElementById('login-screen').style.display = (name === 'login') ? 'flex' : 'none';
   document.getElementById('main-app').style.display = (name === 'main') ? 'flex' : 'none';
+  applyTranslations();
 }
 
 function setupSetupForm() {
@@ -361,7 +388,18 @@ async function initMainApp() {
 
   connectEventsWebSocket();
 
-  state.navigateTo('dashboard');
+  const validViews = ['dashboard', 'servers', 'console', 'files', 'plugins', 'modrinth', 'backups', 'monitoring', 'users', 'audit', 'settings'];
+  const hashView = window.location.hash.replace(/^#\/?/, '').trim();
+  const savedView = localStorage.getItem('craftpanel_active_view');
+  const initialView = (hashView && validViews.includes(hashView)) ? hashView : ((savedView && validViews.includes(savedView)) ? savedView : 'dashboard');
+  state.navigateTo(initialView);
+
+  window.addEventListener('hashchange', () => {
+    const hash = window.location.hash.replace(/^#\/?/, '').trim();
+    if (hash && validViews.includes(hash) && hash !== state.currentView) {
+      state.navigateTo(hash);
+    }
+  });
 }
 
 async function populateServerSelector() {
@@ -655,8 +693,26 @@ function handleTaskUpdate(task) {
 function applyTranslations() {
   document.querySelectorAll('[data-i18n]').forEach(el => {
     const key = el.dataset.i18n;
-    el.innerText = i18n.t(key, el.innerText);
+    const trans = i18n.t(key);
+    if (trans && trans !== key) {
+      el.innerText = trans;
+    }
   });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+    const key = el.dataset.i18nPlaceholder;
+    const trans = i18n.t(key);
+    if (trans && trans !== key) {
+      el.placeholder = trans;
+    }
+  });
+  const pageTitle = document.getElementById('page-title');
+  if (pageTitle && state.currentView) {
+    pageTitle.innerText = i18n.t(state.currentView, state.currentView.charAt(0).toUpperCase() + state.currentView.slice(1));
+  }
+  const btnLogout = document.getElementById('btn-logout');
+  if (btnLogout) {
+    btnLogout.title = i18n.t('logout');
+  }
 }
 
 function escapeHtml(str) {

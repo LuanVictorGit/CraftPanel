@@ -15,6 +15,13 @@ let debounceCompleteTimer = null;
 export async function renderConsole(root, state) {
   const serverId = state.activeServerId || 'local';
 
+  state.currentCleanup = () => {
+    if (activeWs) {
+      activeWs.close();
+      activeWs = null;
+    }
+  };
+
   root.innerHTML = `
     <div style="display:flex;flex-direction:column;gap:16px;">
       <!-- Console Container -->

@@ -10,7 +10,7 @@ export async function renderUsers(root, state) {
         <div class="card-header">
           <div>
             <h3 class="card-title">${i18n.t('usersTitle')}</h3>
-            <span class="card-subtitle">Manage individual user accounts and individual privileges</span>
+            <span class="card-subtitle">${i18n.t('usersSubtitle')}</span>
           </div>
           <button class="btn btn-primary btn-sm" id="btn-create-user-modal">
             <svg style="width:14px;height:14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -28,7 +28,7 @@ export async function renderUsers(root, state) {
         <div class="card-header">
           <div>
             <h3 class="card-title">${i18n.t('rolesTitle')}</h3>
-            <span class="card-subtitle">Predefined system roles and customizable permission templates</span>
+            <span class="card-subtitle">${i18n.t('rolesSubtitle')}</span>
           </div>
         </div>
 
@@ -69,11 +69,11 @@ function renderUsersTable(users) {
       <table class="data-table">
         <thead>
           <tr>
-            <th>Username</th>
-            <th>Display Name</th>
-            <th>Role</th>
-            <th>Created</th>
-            <th style="text-align:right;">Actions</th>
+            <th>${i18n.t('username')}</th>
+            <th>${i18n.t('displayName')}</th>
+            <th>${i18n.t('role')}</th>
+            <th>${i18n.t('created')}</th>
+            <th style="text-align:right;">${i18n.t('actions')}</th>
           </tr>
         </thead>
         <tbody>
@@ -110,10 +110,10 @@ function renderUsersTable(users) {
   container.querySelectorAll('.btn-delete-user').forEach(btn => {
     btn.addEventListener('click', () => {
       const id = btn.dataset.id;
-      modal.confirm('Delete User', 'Are you sure you want to permanently delete this user account?', async () => {
+      modal.confirm(i18n.t('delete'), i18n.t('deleteUserConfirm'), async () => {
         try {
           await api.delete(`/api/users/${id}`);
-          toast.success('User deleted');
+          toast.success(i18n.t('userDeleted'));
           loadUsersAndRoles();
         } catch (e) {
           toast.error(e.message);
@@ -138,11 +138,11 @@ function renderRolesTable(roles) {
       <table class="data-table">
         <thead>
           <tr>
-            <th>Role Identifier</th>
-            <th>Name</th>
-            <th>Description</th>
-            <th>Type</th>
-            <th>Permissions Count</th>
+            <th>${i18n.t('roleIdentifier')}</th>
+            <th>${i18n.t('name')}</th>
+            <th>${i18n.t('description')}</th>
+            <th>${i18n.t('type')}</th>
+            <th>${i18n.t('permissionsCount')}</th>
           </tr>
         </thead>
         <tbody>
@@ -151,8 +151,8 @@ function renderRolesTable(roles) {
               <td style="font-family:var(--font-mono);font-size:12px;font-weight:600;">${escapeHtml(r.id)}</td>
               <td style="font-weight:600;">${escapeHtml(r.name)}</td>
               <td style="font-size:12px;color:var(--text-muted);">${escapeHtml(r.description || '')}</td>
-              <td><span class="badge ${r.isSystem ? 'badge-gray' : 'badge-green'}">${r.isSystem ? 'System' : 'Custom'}</span></td>
-              <td style="font-size:12px;"><strong>${r.permissions ? r.permissions.length : 0}</strong> privileges</td>
+              <td><span class="badge ${r.isSystem ? 'badge-gray' : 'badge-green'}">${r.isSystem ? i18n.t('systemRole') : i18n.t('customRole')}</span></td>
+              <td style="font-size:12px;"><strong>${r.permissions ? r.permissions.length : 0}</strong> ${i18n.t('privileges')}</td>
             </tr>
           `).join('')}
         </tbody>

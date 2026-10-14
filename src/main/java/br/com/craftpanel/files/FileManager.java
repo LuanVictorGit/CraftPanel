@@ -144,7 +144,7 @@ public class FileManager {
         Path root = Paths.get(server.serverDir());
         Path target = PathValidator.resolveAndValidate(root, relativePath);
 
-        if (target.equals(root.toAbsolutePath().normalize())) {
+        if (target.toAbsolutePath().normalize().equals(root.toAbsolutePath().normalize())) {
             throw new SecurityException("Cannot delete server root directory");
         }
 
@@ -153,13 +153,31 @@ public class FileManager {
         }
 
         if (Files.isDirectory(target)) {
+            List<Path> paths;
             try (Stream<Path> stream = Files.walk(target)) {
-                stream.sorted(Comparator.reverseOrder())
-                        .map(Path::toFile)
-                        .forEach(File::delete);
+                paths = stream.sorted(Comparator.reverseOrder()).toList();
+            }
+            for (Path p : paths) {
+                try {
+                    Files.deleteIfExists(p);
+                } catch (Exception e) {
+                    File f = p.toFile();
+                    f.setWritable(true);
+                    if (!f.delete()) {
+                        f.deleteOnExit();
+                    }
+                }
             }
         } else {
-            Files.delete(target);
+            try {
+                Files.deleteIfExists(target);
+            } catch (Exception e) {
+                File f = target.toFile();
+                f.setWritable(true);
+                if (!f.delete()) {
+                    throw e;
+                }
+            }
         }
     }
 
@@ -188,7 +206,9 @@ public class FileManager {
         Path targetFile = targetDir.resolve(sanitizedFilename);
         PathValidator.resolveAndValidate(root, root.relativize(targetFile).toString());
 
-        Files.copy(inputStream, targetFile, StandardCopyOption.REPLACE_EXISTING);
+        try (inputStream) {
+            Files.copy(inputStream, targetFile, StandardCopyOption.REPLACE_EXISTING);
+        }
     }
 
     private String getExtension(String name) {

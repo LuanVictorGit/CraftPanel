@@ -139,7 +139,7 @@ function renderFileTable(serverId, items) {
   if (!container) return;
 
   if (items.length === 0) {
-    container.innerHTML = `<div style="text-align:center;padding:48px;color:var(--text-muted);">This folder is empty</div>`;
+    container.innerHTML = `<div style="text-align:center;padding:48px;color:var(--text-muted);">${i18n.t('folderEmpty')}</div>`;
     return;
   }
 
@@ -172,11 +172,11 @@ function renderFileTable(serverId, items) {
               <td style="text-align:right;">
                 <div style="display:inline-flex;gap:4px;">
                   ${!item.isDirectory ? `
-                    <button class="btn btn-icon btn-file-download" data-path="${item.relativePath}" title="Download">
+                    <button class="btn btn-icon btn-file-download" data-path="${escapeHtml(item.relativePath)}" title="${i18n.t('download')}">
                       <svg style="width:15px;height:15px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
                     </button>
                   ` : ''}
-                  <button class="btn btn-icon btn-file-delete" data-path="${item.relativePath}" title="Delete">
+                  <button class="btn btn-icon btn-file-delete" data-path="${escapeHtml(item.relativePath)}" title="${i18n.t('delete')}">
                     <svg style="width:15px;height:15px;color:var(--accent-rose);" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                   </button>
                 </div>
@@ -191,7 +191,7 @@ function renderFileTable(serverId, items) {
   container.querySelectorAll('.file-name-click').forEach(el => {
     el.addEventListener('click', () => {
       const isDir = el.dataset.isdir === 'true';
-      const path = el.dataset.path;
+      const path = el.getAttribute('data-path') || el.dataset.path;
       if (isDir) {
         loadDirectory(serverId, path);
       } else {
@@ -203,7 +203,7 @@ function renderFileTable(serverId, items) {
   container.querySelectorAll('.btn-file-download').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      const path = btn.dataset.path;
+      const path = btn.getAttribute('data-path') || btn.dataset.path;
       window.open(`/api/servers/${serverId}/files/download?path=${encodeURIComponent(path)}`, '_blank');
     });
   });
@@ -211,11 +211,12 @@ function renderFileTable(serverId, items) {
   container.querySelectorAll('.btn-file-delete').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      const path = btn.dataset.path;
-      modal.confirm(i18n.t('delete'), `Are you sure you want to delete "${path}"?`, async () => {
+      const path = btn.getAttribute('data-path') || btn.dataset.path;
+      if (!path) return;
+      modal.confirm(i18n.t('delete'), `${i18n.t('confirmDeleteFile')} "${path}"?`, async () => {
         try {
           await api.delete(`/api/servers/${serverId}/files`, { path });
-          toast.success('Deleted successfully');
+          toast.success(i18n.t('deletedSuccessfully'));
           loadDirectory(serverId, currentPath);
         } catch (err) {
           toast.error(err.message);
@@ -295,7 +296,7 @@ function promptNewFile(serverId) {
     title: i18n.t('newFile'),
     contentHtml: `
       <div class="form-group">
-        <label class="form-label">Filename</label>
+        <label class="form-label">${i18n.t('fileName')}</label>
         <input type="text" id="prompt-file-name" class="form-input" placeholder="e.g. server.properties" required>
       </div>
     `,
@@ -310,7 +311,7 @@ function promptNewFile(serverId) {
           const fullPath = currentPath ? `${currentPath}/${name}` : name;
           try {
             await api.post(`/api/servers/${serverId}/files/create`, { path: fullPath });
-            toast.success('File created');
+            toast.success(i18n.t('fileCreated'));
             close();
             loadDirectory(serverId, currentPath);
           } catch (e) {
@@ -327,7 +328,7 @@ function promptNewFolder(serverId) {
     title: i18n.t('newFolder'),
     contentHtml: `
       <div class="form-group">
-        <label class="form-label">Folder Name</label>
+        <label class="form-label">${i18n.t('folderName')}</label>
         <input type="text" id="prompt-folder-name" class="form-input" placeholder="e.g. plugins" required>
       </div>
     `,
@@ -342,7 +343,7 @@ function promptNewFolder(serverId) {
           const fullPath = currentPath ? `${currentPath}/${name}` : name;
           try {
             await api.post(`/api/servers/${serverId}/files/directory`, { path: fullPath });
-            toast.success('Folder created');
+            toast.success(i18n.t('folderCreated'));
             close();
             loadDirectory(serverId, currentPath);
           } catch (e) {

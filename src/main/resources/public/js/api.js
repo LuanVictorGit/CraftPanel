@@ -72,7 +72,7 @@ export const api = {
       const qs = q.toString();
       if (qs) url += (url.includes('?') ? '&' : '?') + qs;
     }
-    return this.request('DELETE', url);
+    return this.request('DELETE', url, params);
   },
 
   upload(endpoint, formData) {
