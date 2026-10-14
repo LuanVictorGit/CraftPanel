@@ -37,13 +37,68 @@ public class ServerRepository {
             Class<?> bukkitClass = Class.forName("org.bukkit.Bukkit");
             Object serverObj = bukkitClass.getMethod("getServer").invoke(null);
             if (serverObj != null) {
-                name = (String) bukkitClass.getMethod("getName").invoke(null);
-                version = (String) bukkitClass.getMethod("getBukkitVersion").invoke(null);
-                software = name;
+                String serverName = (String) bukkitClass.getMethod("getName").invoke(null);
+                String serverVer = (String) bukkitClass.getMethod("getVersion").invoke(null);
+                String rawBukkitVer = (String) bukkitClass.getMethod("getBukkitVersion").invoke(null);
+                if (rawBukkitVer != null) {
+                    version = rawBukkitVer.contains("-") ? rawBukkitVer.split("-")[0].trim() : rawBukkitVer.trim();
+                }
+
+                boolean isFolia = false;
+                try {
+                    Class.forName("io.papermc.paper.threadedregions.RegionizedServer");
+                    isFolia = true;
+                } catch (Throwable ignoredFolia) {}
+
+                if (!isFolia && ((serverVer != null && serverVer.toLowerCase().contains("folia")) || (serverName != null && serverName.toLowerCase().contains("folia")))) {
+                    isFolia = true;
+                }
+
+                if (isFolia) {
+                    software = "Folia";
+                } else {
+                    boolean isPurpur = false;
+                    try {
+                        Class.forName("org.purpurmc.purpur.PurpurConfig");
+                        isPurpur = true;
+                    } catch (Throwable ignoredPurpur) {}
+                    if (!isPurpur && serverVer != null && serverVer.toLowerCase().contains("purpur")) {
+                        isPurpur = true;
+                    }
+
+                    if (isPurpur) {
+                        software = "Purpur";
+                    } else {
+                        boolean isPaper = false;
+                        try {
+                            Class.forName("com.destroystokyo.paper.PaperConfig");
+                            isPaper = true;
+                        } catch (Throwable ignoredPaper) {
+                            try {
+                                Class.forName("io.papermc.paper.configuration.Configuration");
+                                isPaper = true;
+                            } catch (Throwable ignoredPaper2) {}
+                        }
+                        if (!isPaper && serverVer != null && serverVer.toLowerCase().contains("paper")) {
+                            isPaper = true;
+                        }
+
+                        if (isPaper) {
+                            software = "Paper";
+                        } else if (serverVer != null && serverVer.toLowerCase().contains("spigot")) {
+                            software = "Spigot";
+                        } else {
+                            software = serverName != null ? serverName : "Spigot";
+                        }
+                    }
+                }
+
                 port = (int) bukkitClass.getMethod("getPort").invoke(null);
                 String motd = (String) bukkitClass.getMethod("getMotd").invoke(null);
                 if (motd != null && !motd.isBlank()) {
                     name = motd.replaceAll("§[0-9a-fk-or]", "").trim();
+                } else if (serverName != null) {
+                    name = serverName;
                 }
             }
         } catch (Throwable ignored) {

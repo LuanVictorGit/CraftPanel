@@ -9,7 +9,7 @@ public class CraftPanelApplication {
     private static final Logger LOGGER = LoggerFactory.getLogger(CraftPanelApplication.class);
 
     public static void main(String[] args) {
-        PanelConfig config = ConfigLoader.load("craftpanel.yml");
+        PanelConfig config = ConfigLoader.load("config.yml");
         CraftPanelServer server = CraftPanelServer.getInstance();
         server.start(config);
 

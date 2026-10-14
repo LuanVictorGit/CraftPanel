@@ -128,10 +128,16 @@ const translations = {
     disabled: "Disabled",
     searchPlaceholder: "Search plugins on Modrinth (e.g. Essentials, LuckPerms, Vault)...",
     allVersions: "All Versions",
-    allPlatforms: "All Loaders",
+    allPlatforms: "All Platforms",
     compatibility: "Compatibility",
     installPlugin: "Install Plugin",
     installed: "Installed",
+    previousPage: "Previous",
+    nextPage: "Next",
+    pageOf: "Page {page} of {total}",
+    pluginsFound: "{count} plugins found",
+    serverForkFilter: "Server Platform",
+    detectedServerFork: "Default filter set to your server fork: {fork}",
 
     // Backups
     createBackup: "Create Backup",
@@ -428,10 +434,16 @@ const translations = {
     disabled: "Desativado",
     searchPlaceholder: "Pesquisar plugins no Modrinth (ex: Essentials, LuckPerms, Vault)...",
     allVersions: "Todas as Versões",
-    allPlatforms: "Todos os Loaders",
+    allPlatforms: "Todas as Plataformas",
     compatibility: "Compatibilidade",
     installPlugin: "Instalar Plugin",
     installed: "Instalado",
+    previousPage: "Voltar",
+    nextPage: "Próximo",
+    pageOf: "Página {page} de {total}",
+    pluginsFound: "{count} plugins encontrados",
+    serverForkFilter: "Plataforma do Servidor",
+    detectedServerFork: "Filtro padrão ajustado para o fork do seu servidor: {fork}",
 
     // Backups
     createBackup: "Criar Backup",
@@ -616,15 +628,18 @@ export const i18n = {
     }
   },
 
-  t(key, fallback = '') {
+  t(key, fallback = '', params = null) {
+    if (typeof fallback === 'object' && fallback !== null) {
+      params = fallback;
+      fallback = '';
+    }
     const dict = translations[currentLang] || translations.en;
-    if (dict && dict[key]) {
-      return dict[key];
+    let str = (dict && dict[key]) ? dict[key] : ((translations.en && translations.en[key]) ? translations.en[key] : (fallback || key));
+    if (params && typeof params === 'object') {
+      for (const [k, v] of Object.entries(params)) {
+        str = str.replace(new RegExp(`\\{${k}\\}`, 'g'), v);
+      }
     }
-    const enDict = translations.en;
-    if (enDict && enDict[key]) {
-      return enDict[key];
-    }
-    return fallback || key;
+    return str;
   }
 };

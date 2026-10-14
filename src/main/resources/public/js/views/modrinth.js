@@ -2,8 +2,55 @@ import { api } from '../api.js';
 import { toast, modal, formatBytes, escapeHtml, loadingModal } from '../ui.js';
 import { i18n } from '../i18n.js';
 
+const ALL_MC_VERSIONS = [
+  '1.21.4', '1.21.3', '1.21.2', '1.21.1', '1.21',
+  '1.20.6', '1.20.5', '1.20.4', '1.20.3', '1.20.2', '1.20.1', '1.20',
+  '1.19.4', '1.19.3', '1.19.2', '1.19.1', '1.19',
+  '1.18.2', '1.18.1', '1.18',
+  '1.17.1', '1.17',
+  '1.16.5', '1.16.4', '1.16.3', '1.16.2', '1.16.1', '1.16',
+  '1.15.2', '1.15.1', '1.15',
+  '1.14.4', '1.14',
+  '1.13.2', '1.13',
+  '1.12.2', '1.12',
+  '1.11.2', '1.10.2', '1.9.4', '1.8.8'
+];
+
+let paginationState = {
+  currentPage: 1,
+  pageSize: 24,
+  totalHits: 0,
+  totalPages: 1
+};
+
 export async function renderModrinth(root, state) {
-  const serverId = state.activeServerId;
+  const serverId = state.activeServerId || 'local';
+
+  let detectedLoader = '';
+  let serverForkName = '';
+  let serverMcVersion = '';
+
+  try {
+    const srv = await api.get('/api/servers/' + serverId);
+    if (srv) {
+      const soft = (srv.software || '').toLowerCase();
+      serverForkName = srv.software || '';
+      serverMcVersion = srv.minecraftVersion || '';
+      if (soft.includes('folia')) {
+        detectedLoader = 'folia';
+      } else if (soft.includes('purpur')) {
+        detectedLoader = 'purpur';
+      } else if (soft.includes('paper')) {
+        detectedLoader = 'paper';
+      } else if (soft.includes('spigot')) {
+        detectedLoader = 'spigot';
+      } else if (soft.includes('bukkit')) {
+        detectedLoader = 'bukkit';
+      }
+    }
+  } catch (e) {}
+
+  const versionOptions = ALL_MC_VERSIONS.map(v => `<option value="${v}">${v}</option>`).join('');
 
   root.innerHTML = `
     <div style="display:flex;flex-direction:column;gap:18px;">
@@ -14,27 +61,24 @@ export async function renderModrinth(root, state) {
             <input type="text" id="modrinth-search-input" class="form-input" placeholder="${i18n.t('searchPlaceholder')}">
           </div>
 
-          <div style="width:160px;">
-            <select id="modrinth-version-filter" class="form-select">
+          <div style="width:170px;">
+            <select id="modrinth-version-filter" class="form-select" title="${i18n.t('minecraftVersion')}">
               <option value="">${i18n.t('allVersions')}</option>
-              <option value="1.21.1">1.21.1</option>
-              <option value="1.20.4">1.20.4</option>
-              <option value="1.19.4">1.19.4</option>
-              <option value="1.18.2">1.18.2</option>
-              <option value="1.16.5">1.16.5</option>
-              <option value="1.12.2">1.12.2</option>
-              <option value="1.8.8">1.8.8</option>
+              ${serverMcVersion && !ALL_MC_VERSIONS.includes(serverMcVersion) ? `<option value="${serverMcVersion}">${serverMcVersion} (${serverForkName || 'Server'})</option>` : ''}
+              ${versionOptions}
             </select>
           </div>
 
-          <div style="width:150px;">
-            <select id="modrinth-loader-filter" class="form-select">
+          <div style="width:160px;">
+            <select id="modrinth-loader-filter" class="form-select" title="${i18n.t('serverForkFilter')}">
               <option value="">${i18n.t('allPlatforms')}</option>
-              <option value="paper">Paper</option>
-              <option value="folia">Folia</option>
-              <option value="purpur">Purpur</option>
-              <option value="spigot">Spigot</option>
-              <option value="bukkit">Bukkit</option>
+              <option value="folia" ${detectedLoader === 'folia' ? 'selected' : ''}>Folia</option>
+              <option value="paper" ${detectedLoader === 'paper' ? 'selected' : ''}>Paper</option>
+              <option value="purpur" ${detectedLoader === 'purpur' ? 'selected' : ''}>Purpur</option>
+              <option value="spigot" ${detectedLoader === 'spigot' ? 'selected' : ''}>Spigot</option>
+              <option value="bukkit" ${detectedLoader === 'bukkit' ? 'selected' : ''}>Bukkit</option>
+              <option value="velocity" ${detectedLoader === 'velocity' ? 'selected' : ''}>Velocity</option>
+              <option value="bungeecord" ${detectedLoader === 'bungeecord' ? 'selected' : ''}>BungeeCord</option>
             </select>
           </div>
 
@@ -43,6 +87,13 @@ export async function renderModrinth(root, state) {
             ${i18n.t('search')}
           </button>
         </div>
+
+        ${detectedLoader ? `
+          <div id="modrinth-fork-badge" style="margin-top:10px;font-size:12px;color:var(--accent-teal);display:flex;align-items:center;gap:6px;">
+            <svg style="width:14px;height:14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            <span>${i18n.t('detectedServerFork', { fork: detectedLoader.toUpperCase() })}</span>
+          </div>
+        ` : ''}
       </div>
 
       <!-- Results Grid -->
@@ -52,35 +103,74 @@ export async function renderModrinth(root, state) {
     </div>
   `;
 
-  document.getElementById('btn-search-modrinth')?.addEventListener('click', () => executeSearch(serverId));
-  document.getElementById('modrinth-search-input')?.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') executeSearch(serverId);
+  paginationState.currentPage = 1;
+
+  document.getElementById('btn-search-modrinth')?.addEventListener('click', () => {
+    paginationState.currentPage = 1;
+    executeSearch(serverId);
   });
-  document.getElementById('modrinth-version-filter')?.addEventListener('change', () => executeSearch(serverId));
-  document.getElementById('modrinth-loader-filter')?.addEventListener('change', () => executeSearch(serverId));
+  document.getElementById('modrinth-search-input')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      paginationState.currentPage = 1;
+      executeSearch(serverId);
+    }
+  });
+  document.getElementById('modrinth-version-filter')?.addEventListener('change', () => {
+    paginationState.currentPage = 1;
+    executeSearch(serverId);
+  });
+  document.getElementById('modrinth-loader-filter')?.addEventListener('change', () => {
+    paginationState.currentPage = 1;
+    executeSearch(serverId);
+  });
 
   await executeSearch(serverId);
 }
 
-async function executeSearch(serverId) {
+async function executeSearch(serverId, targetPage = null) {
+  if (targetPage !== null) {
+    paginationState.currentPage = targetPage;
+  }
+
   const query = document.getElementById('modrinth-search-input')?.value.trim() || '';
   const version = document.getElementById('modrinth-version-filter')?.value || '';
   const loader = document.getElementById('modrinth-loader-filter')?.value || '';
+
+  const badgeEl = document.getElementById('modrinth-fork-badge');
+  if (badgeEl) {
+    badgeEl.style.display = loader ? 'flex' : 'none';
+    const badgeText = badgeEl.querySelector('span');
+    if (badgeText && loader) {
+      badgeText.textContent = i18n.t('detectedServerFork', { fork: loader.toUpperCase() });
+    }
+  }
 
   const container = document.getElementById('modrinth-results-container');
   if (container) {
     container.innerHTML = `<div style="text-align:center;padding:32px;color:var(--text-muted);">${i18n.t('searchingModrinth')}</div>`;
   }
 
+  const offset = (paginationState.currentPage - 1) * paginationState.pageSize;
+
   try {
     const res = await api.get('/api/modrinth/search', {
       query: query || undefined,
       version: version || undefined,
       loader: loader || undefined,
-      limit: 24
+      limit: paginationState.pageSize,
+      offset: offset
     });
 
-    renderModrinthHits(res.hits || [], serverId);
+    paginationState.totalHits = res.totalHits || 0;
+    paginationState.totalPages = Math.max(1, Math.ceil(paginationState.totalHits / paginationState.pageSize));
+
+    renderModrinthHits(res.hits || [], serverId, (newPage) => {
+      executeSearch(serverId, newPage);
+      const resContainer = document.getElementById('modrinth-results-container');
+      if (resContainer) {
+        resContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
   } catch (e) {
     if (container) {
       container.innerHTML = `<div style="text-align:center;padding:32px;color:var(--accent-rose);">Search error: ${escapeHtml(e.message)}</div>`;
@@ -88,7 +178,7 @@ async function executeSearch(serverId) {
   }
 }
 
-function renderModrinthHits(hits, serverId) {
+function renderModrinthHits(hits, serverId, onPageChange) {
   const container = document.getElementById('modrinth-results-container');
   if (!container) return;
 
@@ -96,6 +186,10 @@ function renderModrinthHits(hits, serverId) {
     container.innerHTML = `<div style="text-align:center;padding:48px;color:var(--text-muted);">${i18n.t('noPluginsFound')}</div>`;
     return;
   }
+
+  const currentPage = paginationState.currentPage;
+  const totalPages = paginationState.totalPages;
+  const totalHits = paginationState.totalHits;
 
   container.innerHTML = `
     <div class="grid-cols-3">
@@ -142,7 +236,39 @@ function renderModrinthHits(hits, serverId) {
         </div>
       `).join('')}
     </div>
+
+    <!-- Pagination Controls -->
+    <div class="card" style="margin-top:18px;padding:12px 18px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+      <div style="font-size:13px;color:var(--text-muted);">
+        ${i18n.t('pageOf', { page: currentPage, total: totalPages })} &bull; 
+        <span style="color:var(--text-main);font-weight:600;">${i18n.t('pluginsFound', { count: totalHits.toLocaleString() })}</span>
+      </div>
+
+      <div style="display:inline-flex;gap:8px;align-items:center;">
+        <button class="btn btn-secondary btn-sm" id="btn-modrinth-prev" ${currentPage <= 1 ? 'disabled style="opacity:0.5;cursor:not-allowed;"' : ''}>
+          <svg style="width:14px;height:14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+          <span>${i18n.t('previousPage')}</span>
+        </button>
+
+        <span style="font-size:12px;padding:4px 10px;border-radius:4px;background:var(--bg-subtle);color:var(--text-main);font-weight:600;border:1px solid var(--border);">
+          ${currentPage} / ${totalPages}
+        </span>
+
+        <button class="btn btn-secondary btn-sm" id="btn-modrinth-next" ${currentPage >= totalPages ? 'disabled style="opacity:0.5;cursor:not-allowed;"' : ''}>
+          <span>${i18n.t('nextPage')}</span>
+          <svg style="width:14px;height:14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+      </div>
+    </div>
   `;
+
+  document.getElementById('btn-modrinth-prev')?.addEventListener('click', () => {
+    if (currentPage > 1 && onPageChange) onPageChange(currentPage - 1);
+  });
+
+  document.getElementById('btn-modrinth-next')?.addEventListener('click', () => {
+    if (currentPage < totalPages && onPageChange) onPageChange(currentPage + 1);
+  });
 
   container.querySelectorAll('.btn-open-project').forEach(btn => {
     btn.addEventListener('click', (e) => {
@@ -151,7 +277,7 @@ function renderModrinthHits(hits, serverId) {
     });
   });
 
-  container.querySelectorAll('.card').forEach(card => {
+  container.querySelectorAll('.card[data-project-id]').forEach(card => {
     card.addEventListener('click', () => {
       openProjectModal(card.dataset.projectId, serverId);
     });

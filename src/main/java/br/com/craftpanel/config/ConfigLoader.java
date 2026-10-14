@@ -101,15 +101,15 @@ public class ConfigLoader {
             if (parent != null) {
                 Files.createDirectories(parent);
             }
-            try (InputStream in = ConfigLoader.class.getResourceAsStream("/craftpanel.yml")) {
+            try (InputStream in = ConfigLoader.class.getResourceAsStream("/config.yml")) {
                 if (in != null) {
                     Files.copy(in, target.toPath(), StandardCopyOption.REPLACE_EXISTING);
                 } else {
-                    Files.writeString(target.toPath(), "server:\n  host: \"127.0.0.1\"\n  port: 8080\n");
+                    Files.writeString(target.toPath(), "server:\n  host: \"0.0.0.0\"\n  port: 2222\n");
                 }
             }
         } catch (Exception e) {
-            LOGGER.error("Could not export default craftpanel.yml to {}", target.getAbsolutePath(), e);
+            LOGGER.error("Could not export default config.yml to {}", target.getAbsolutePath(), e);
         }
     }
 
