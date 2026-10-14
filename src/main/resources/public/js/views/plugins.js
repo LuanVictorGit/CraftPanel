@@ -2,6 +2,7 @@ import { api } from '../api.js';
 import { toast, modal, formatBytes, escapeHtml, loadingModal } from '../ui.js';
 import { i18n } from '../i18n.js';
 import { icons } from '../icons.js';
+import { ALL_MC_VERSIONS } from './modrinth.js';
 
 export async function renderPlugins(root, state) {
   const serverId = state.activeServerId || 'local';
@@ -228,12 +229,38 @@ function renderPluginsTable(serverId, plugins) {
   });
 }
 
-function openInstallPluginModal(serverId) {
+async function openInstallPluginModal(serverId) {
+  let detectedLoader = '';
+  let serverForkName = '';
+  let serverMcVersion = '';
+
+  try {
+    const srv = await api.get('/api/servers/' + serverId);
+    if (srv) {
+      const soft = (srv.software || '').toLowerCase();
+      serverForkName = srv.software || '';
+      serverMcVersion = srv.minecraftVersion || '';
+      if (soft.includes('folia')) {
+        detectedLoader = 'folia';
+      } else if (soft.includes('purpur')) {
+        detectedLoader = 'purpur';
+      } else if (soft.includes('paper')) {
+        detectedLoader = 'paper';
+      } else if (soft.includes('spigot')) {
+        detectedLoader = 'spigot';
+      } else if (soft.includes('bukkit')) {
+        detectedLoader = 'bukkit';
+      }
+    }
+  } catch (e) {}
+
+  const versionOptions = ALL_MC_VERSIONS.map(v => `<option value="${v}">${v}</option>`).join('');
+
   modal.open({
     title: i18n.t('installPlugin'),
     wide: true,
     contentHtml: `
-      <div style="display:flex;flex-direction:column;gap:16px;">
+      <div style="display:flex;flex-direction:column;gap:14px;">
         <div style="display:flex;gap:8px;border-bottom:1px solid var(--border);padding-bottom:10px;">
           <button class="btn btn-sm btn-primary" id="tab-btn-modrinth" style="flex:1;">${i18n.t('modrinthStore')}</button>
           <button class="btn btn-sm btn-secondary" id="tab-btn-upload" style="flex:1;">${i18n.t('uploadJar')}</button>
@@ -241,12 +268,62 @@ function openInstallPluginModal(serverId) {
 
         <!-- Tab 1: Modrinth Store -->
         <div id="tab-content-modrinth" style="display:flex;flex-direction:column;gap:12px;">
-          <div style="display:flex;gap:8px;">
-            <input type="text" id="modal-modrinth-search" class="form-input" placeholder="${i18n.t('searchPlaceholder')}" style="flex:1;">
-            <button class="btn btn-primary btn-sm" id="modal-btn-search">${i18n.t('search')}</button>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+            <input type="text" id="modal-modrinth-search" class="form-input" placeholder="${i18n.t('searchPlaceholder')}" style="flex:1;min-width:180px;">
+
+            <div style="width:130px;">
+              <select id="modal-modrinth-version" class="form-select" title="${i18n.t('minecraftVersion')}" style="font-size:12px;padding:6px 8px;">
+                <option value="">${i18n.t('allVersions')}</option>
+                ${serverMcVersion && !ALL_MC_VERSIONS.includes(serverMcVersion) ? `<option value="${serverMcVersion}">${serverMcVersion} (${serverForkName || 'Server'})</option>` : ''}
+                ${versionOptions}
+              </select>
+            </div>
+
+            <div style="width:130px;">
+              <select id="modal-modrinth-loader" class="form-select" title="${i18n.t('serverForkFilter')}" style="font-size:12px;padding:6px 8px;">
+                <option value="">${i18n.t('allPlatforms')}</option>
+                <option value="folia" ${detectedLoader === 'folia' ? 'selected' : ''}>Folia</option>
+                <option value="paper" ${detectedLoader === 'paper' ? 'selected' : ''}>Paper</option>
+                <option value="purpur" ${detectedLoader === 'purpur' ? 'selected' : ''}>Purpur</option>
+                <option value="spigot" ${detectedLoader === 'spigot' ? 'selected' : ''}>Spigot</option>
+                <option value="bukkit" ${detectedLoader === 'bukkit' ? 'selected' : ''}>Bukkit</option>
+                <option value="velocity" ${detectedLoader === 'velocity' ? 'selected' : ''}>Velocity</option>
+                <option value="bungeecord" ${detectedLoader === 'bungeecord' ? 'selected' : ''}>BungeeCord</option>
+              </select>
+            </div>
+
+            <button class="btn btn-primary btn-sm" id="modal-btn-search">
+              <svg style="width:13px;height:13px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <span>${i18n.t('search')}</span>
+            </button>
           </div>
-          <div id="modal-modrinth-results" style="max-height:360px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding-right:4px;">
+
+          <div id="modal-modrinth-fork-badge" style="display:${detectedLoader ? 'flex' : 'none'};align-items:center;gap:6px;font-size:11px;color:var(--accent-teal);margin-top:-4px;">
+            <svg style="width:13px;height:13px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            <span>${detectedLoader ? i18n.t('detectedServerFork', { fork: detectedLoader.toUpperCase() }) : ''}</span>
+          </div>
+
+          <div id="modal-modrinth-results" style="max-height:360px;min-height:200px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding-right:4px;">
             <div style="text-align:center;padding:24px;color:var(--text-muted);">${i18n.t('searchPrompt')}</div>
+          </div>
+
+          <!-- Pagination Controls -->
+          <div id="modal-modrinth-pagination" style="display:none;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:8px 12px;background:var(--bg-main);border:1px solid var(--border);border-radius:6px;">
+            <div style="font-size:12px;color:var(--text-muted);" id="modal-pagination-info"></div>
+
+            <div style="display:inline-flex;gap:6px;align-items:center;">
+              <button class="btn btn-secondary btn-sm" id="modal-btn-prev">
+                <svg style="width:12px;height:12px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+                <span>${i18n.t('previousPage')}</span>
+              </button>
+
+              <span id="modal-page-indicator" style="font-size:11px;padding:3px 8px;border-radius:4px;background:var(--bg-subtle);color:var(--text-main);font-weight:600;border:1px solid var(--border);">1 / 1</span>
+
+              <button class="btn btn-secondary btn-sm" id="modal-btn-next">
+                <span>${i18n.t('nextPage')}</span>
+                <svg style="width:12px;height:12px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -271,10 +348,25 @@ function openInstallPluginModal(serverId) {
   const tabContentModrinth = document.getElementById('tab-content-modrinth');
   const tabContentUpload = document.getElementById('tab-content-upload');
   const searchInput = document.getElementById('modal-modrinth-search');
+  const versionSelect = document.getElementById('modal-modrinth-version');
+  const loaderSelect = document.getElementById('modal-modrinth-loader');
   const searchBtn = document.getElementById('modal-btn-search');
+  const forkBadgeEl = document.getElementById('modal-modrinth-fork-badge');
   const resultsContainer = document.getElementById('modal-modrinth-results');
+  const paginationEl = document.getElementById('modal-modrinth-pagination');
+  const paginationInfoEl = document.getElementById('modal-pagination-info');
+  const pageIndicatorEl = document.getElementById('modal-page-indicator');
+  const prevBtn = document.getElementById('modal-btn-prev');
+  const nextBtn = document.getElementById('modal-btn-next');
   const dropZone = document.getElementById('modal-drop-zone');
   const fileInput = document.getElementById('modal-file-input');
+
+  let modalPagination = {
+    currentPage: 1,
+    pageSize: 10,
+    totalHits: 0,
+    totalPages: 1
+  };
 
   tabBtnModrinth?.addEventListener('click', () => {
     tabBtnModrinth.className = 'btn btn-sm btn-primary';
@@ -290,19 +382,48 @@ function openInstallPluginModal(serverId) {
     tabContentModrinth.style.display = 'none';
   });
 
-  const performModalSearch = async (query) => {
+  const performModalSearch = async (targetPage = null) => {
+    if (targetPage !== null) {
+      modalPagination.currentPage = targetPage;
+    }
     if (!resultsContainer) return;
+
+    const query = searchInput?.value.trim() || '';
+    const version = versionSelect?.value || '';
+    const loader = loaderSelect?.value || '';
+
+    if (forkBadgeEl) {
+      forkBadgeEl.style.display = loader ? 'flex' : 'none';
+      const badgeSpan = forkBadgeEl.querySelector('span');
+      if (badgeSpan && loader) {
+        badgeSpan.textContent = i18n.t('detectedServerFork', { fork: loader.toUpperCase() });
+      }
+    }
+
     resultsContainer.innerHTML = `<div style="text-align:center;padding:24px;color:var(--text-muted);">${i18n.t('searchingModrinth')}</div>`;
+    if (paginationEl) paginationEl.style.display = 'none';
+
+    const offset = (modalPagination.currentPage - 1) * modalPagination.pageSize;
+
     try {
       const res = await api.get('/api/modrinth/search', {
         query: query || undefined,
-        limit: 15
+        version: version || undefined,
+        loader: loader || undefined,
+        limit: modalPagination.pageSize,
+        offset: offset
       });
+
       const hits = res.hits || [];
+      modalPagination.totalHits = res.totalHits || 0;
+      modalPagination.totalPages = Math.max(1, Math.ceil(modalPagination.totalHits / modalPagination.pageSize));
+
       if (hits.length === 0) {
         resultsContainer.innerHTML = `<div style="text-align:center;padding:24px;color:var(--text-muted);">${i18n.t('noPluginsFound')}</div>`;
+        if (paginationEl) paginationEl.style.display = 'none';
         return;
       }
+
       resultsContainer.innerHTML = hits.map(hit => {
         const iconSrc = hit.iconUrl || hit.icon_url || '';
         const projId = hit.id || hit.slug;
@@ -337,6 +458,28 @@ function openInstallPluginModal(serverId) {
         </div>
       `;
       }).join('');
+
+      if (paginationEl) {
+        paginationEl.style.display = 'flex';
+        if (paginationInfoEl) {
+          paginationInfoEl.innerHTML = `${i18n.t('pageOf', { page: modalPagination.currentPage, total: modalPagination.totalPages })} &bull; <span style="color:var(--text-main);font-weight:600;">${i18n.t('pluginsFound', { count: modalPagination.totalHits.toLocaleString() })}</span>`;
+        }
+        if (pageIndicatorEl) {
+          pageIndicatorEl.textContent = `${modalPagination.currentPage} / ${modalPagination.totalPages}`;
+        }
+        if (prevBtn) {
+          prevBtn.disabled = modalPagination.currentPage <= 1;
+          prevBtn.style.opacity = modalPagination.currentPage <= 1 ? '0.5' : '1';
+          prevBtn.style.cursor = modalPagination.currentPage <= 1 ? 'not-allowed' : 'pointer';
+        }
+        if (nextBtn) {
+          nextBtn.disabled = modalPagination.currentPage >= modalPagination.totalPages;
+          nextBtn.style.opacity = modalPagination.currentPage >= modalPagination.totalPages ? '0.5' : '1';
+          nextBtn.style.cursor = modalPagination.currentPage >= modalPagination.totalPages ? 'not-allowed' : 'pointer';
+        }
+      }
+
+      resultsContainer.scrollTop = 0;
 
       resultsContainer.querySelectorAll('.btn-modal-install').forEach(btn => {
         btn.addEventListener('click', async () => {
@@ -413,12 +556,42 @@ function openInstallPluginModal(serverId) {
       });
     } catch (e) {
       resultsContainer.innerHTML = `<div style="text-align:center;padding:24px;color:var(--accent-rose);">Error: ${escapeHtml(e.message)}</div>`;
+      if (paginationEl) paginationEl.style.display = 'none';
     }
   };
 
-  searchBtn?.addEventListener('click', () => performModalSearch(searchInput?.value.trim()));
+  prevBtn?.addEventListener('click', () => {
+    if (modalPagination.currentPage > 1) {
+      performModalSearch(modalPagination.currentPage - 1);
+    }
+  });
+
+  nextBtn?.addEventListener('click', () => {
+    if (modalPagination.currentPage < modalPagination.totalPages) {
+      performModalSearch(modalPagination.currentPage + 1);
+    }
+  });
+
+  searchBtn?.addEventListener('click', () => {
+    modalPagination.currentPage = 1;
+    performModalSearch();
+  });
+
   searchInput?.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') performModalSearch(searchInput?.value.trim());
+    if (e.key === 'Enter') {
+      modalPagination.currentPage = 1;
+      performModalSearch();
+    }
+  });
+
+  versionSelect?.addEventListener('change', () => {
+    modalPagination.currentPage = 1;
+    performModalSearch();
+  });
+
+  loaderSelect?.addEventListener('change', () => {
+    modalPagination.currentPage = 1;
+    performModalSearch();
   });
 
   dropZone?.addEventListener('click', () => fileInput?.click());
@@ -441,8 +614,30 @@ function openInstallPluginModal(serverId) {
     }
   });
 
-  // Load default top plugins for initial convenience
-  performModalSearch('');
+  api.get('/api/modrinth/game-versions').then(versions => {
+    if (Array.isArray(versions) && versions.length > 0) {
+      const select = document.getElementById('modal-modrinth-version');
+      if (!select) return;
+      const currentVal = select.value;
+      const merged = Array.from(new Set([...versions, ...ALL_MC_VERSIONS]));
+      merged.sort((a, b) => {
+        const a26 = a.startsWith('26');
+        const b26 = b.startsWith('26');
+        if (a26 && !b26) return -1;
+        if (!a26 && b26) return 1;
+        return b.localeCompare(a, undefined, { numeric: true, sensitivity: 'base' });
+      });
+      let html = `<option value="">${i18n.t('allVersions')}</option>`;
+      if (serverMcVersion && !merged.includes(serverMcVersion)) {
+        html += `<option value="${serverMcVersion}">${serverMcVersion} (${serverForkName || 'Server'})</option>`;
+      }
+      html += merged.map(v => `<option value="${v}">${v}</option>`).join('');
+      select.innerHTML = html;
+      select.value = currentVal;
+    }
+  }).catch(() => {});
+
+  performModalSearch();
 }
 
 async function checkPluginUpdates(serverId) {
