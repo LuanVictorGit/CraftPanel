@@ -39,7 +39,7 @@ public class MinecraftPing {
             ByteArrayOutputStream handshakeBytes = new ByteArrayOutputStream();
             DataOutputStream handshakeOut = new DataOutputStream(handshakeBytes);
             writeVarInt(handshakeOut, 0x00);
-            writeVarInt(handshakeOut, 47);
+            writeVarInt(handshakeOut, -1);
             writeString(handshakeOut, host);
             handshakeOut.writeShort(port);
             writeVarInt(handshakeOut, 1);
@@ -61,6 +61,19 @@ public class MinecraftPing {
             byte[] data = new byte[length];
             in.readFully(data);
             long pingMs = System.currentTimeMillis() - start;
+
+            try {
+                ByteArrayOutputStream pingBytes = new ByteArrayOutputStream();
+                DataOutputStream pingOut = new DataOutputStream(pingBytes);
+                writeVarInt(pingOut, 0x01);
+                pingOut.writeLong(start);
+                writeVarInt(out, pingBytes.size());
+                out.write(pingBytes.toByteArray());
+                out.flush();
+                readVarInt(in);
+                readVarInt(in);
+                in.readLong();
+            } catch (Exception ignored) {}
 
             String json = new String(data, StandardCharsets.UTF_8);
             JsonNode root = MAPPER.readTree(json);

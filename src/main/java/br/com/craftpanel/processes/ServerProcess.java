@@ -205,6 +205,10 @@ public class ServerProcess {
         return Duration.ZERO;
     }
 
+    public boolean isHostInstance() {
+        return isHostInstance;
+    }
+
     public synchronized void start() throws IOException {
         if (isHostInstance) {
             if (state != ProcessState.RUNNING) {
@@ -311,7 +315,7 @@ public class ServerProcess {
                             LOGGER.error("Failed to execute Bukkit command", e);
                         }
                     });
-                } catch (NoSuchMethodException ignored) {
+                } catch (Throwable fallbackToBukkit) {
                     plugin.getServer().getScheduler().runTask(plugin, () -> {
                         try {
                             dispatch.invoke(null, consoleSender, command);

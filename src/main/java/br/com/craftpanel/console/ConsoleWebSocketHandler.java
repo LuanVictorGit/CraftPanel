@@ -233,13 +233,21 @@ public class ConsoleWebSocketHandler {
                 Class<?> bukkitClass = Class.forName("org.bukkit.Bukkit");
                 Object server = bukkitClass.getMethod("getServer").invoke(null);
                 Object commandMap = server.getClass().getMethod("getCommandMap").invoke(server);
-                Field knownCommandsField = commandMap.getClass().getDeclaredField("knownCommands");
-                knownCommandsField.setAccessible(true);
-                Map<?, ?> map = (Map<?, ?>) knownCommandsField.get(commandMap);
-                for (Object k : map.keySet()) {
-                    String cmdName = String.valueOf(k);
-                    if (!cmdName.contains(":") && cmdName.toLowerCase().startsWith(clean)) {
-                        completions.add(query.startsWith("/") ? ("/" + cmdName) : cmdName);
+                Map<?, ?> map = null;
+                try {
+                    Method getKnown = commandMap.getClass().getMethod("getKnownCommands");
+                    map = (Map<?, ?>) getKnown.invoke(commandMap);
+                } catch (Throwable fallback) {
+                    Field knownCommandsField = commandMap.getClass().getDeclaredField("knownCommands");
+                    knownCommandsField.setAccessible(true);
+                    map = (Map<?, ?>) knownCommandsField.get(commandMap);
+                }
+                if (map != null) {
+                    for (Object k : map.keySet()) {
+                        String cmdName = String.valueOf(k);
+                        if (!cmdName.contains(":") && cmdName.toLowerCase().startsWith(clean)) {
+                            completions.add(query.startsWith("/") ? ("/" + cmdName) : cmdName);
+                        }
                     }
                 }
             } catch (Throwable ignored) {}

@@ -108,25 +108,34 @@ public class TickMonitor implements Runnable {
                 for (World w : worlds) {
                     String wName = w.getName();
                     String envName = w.getEnvironment().name();
-                    int chunkCount = w.getLoadedChunks().length;
-                    List<org.bukkit.entity.Entity> entities = w.getEntities();
-                    int entCount = entities.size();
-                    int playerCount = w.getPlayers().size();
+                    int chunkCount = 0;
+                    try {
+                        chunkCount = w.getLoadedChunks().length;
+                    } catch (Throwable ignored) {}
 
+                    int entCount = 0;
                     int livingCount = 0;
                     int itemsCount = 0;
                     int otherCount = 0;
-
-                    for (org.bukkit.entity.Entity e : entities) {
-                        if (e instanceof Player) {
-                        } else if (e instanceof LivingEntity) {
-                            livingCount++;
-                        } else if (e instanceof Item) {
-                            itemsCount++;
-                        } else {
-                            otherCount++;
+                    try {
+                        List<org.bukkit.entity.Entity> entities = w.getEntities();
+                        entCount = entities.size();
+                        for (org.bukkit.entity.Entity e : entities) {
+                            if (e instanceof Player) {
+                            } else if (e instanceof LivingEntity) {
+                                livingCount++;
+                            } else if (e instanceof Item) {
+                                itemsCount++;
+                            } else {
+                                otherCount++;
+                            }
                         }
-                    }
+                    } catch (Throwable ignored) {}
+
+                    int playerCount = 0;
+                    try {
+                        playerCount = w.getPlayers().size();
+                    } catch (Throwable ignored) {}
 
                     totalChunks += chunkCount;
                     totalEntities += entCount;

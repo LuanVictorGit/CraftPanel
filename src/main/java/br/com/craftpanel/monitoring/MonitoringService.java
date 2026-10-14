@@ -282,12 +282,17 @@ public class MonitoringService {
             try {
                 Method getTps = bukkitClass.getMethod("getTPS");
                 return (double[]) getTps.invoke(null);
-            } catch (NoSuchMethodException e) {
+            } catch (Throwable ignored) {
                 Object spigot = bukkitClass.getMethod("spigot").invoke(null);
                 Method getTps = spigot.getClass().getMethod("getTPS");
                 return (double[]) getTps.invoke(spigot);
             }
         } catch (Throwable ignored) {}
+        TickMonitor.MsptStats stats = TickMonitor.getInstance().getStats();
+        if (stats != null && stats.currentMs() > 0) {
+            double estTps = Math.min(20.0, Math.round((1000.0 / Math.max(50.0, stats.currentMs())) * 10.0) / 10.0);
+            return new double[]{estTps, estTps, estTps};
+        }
         return new double[]{20.0, 20.0, 20.0};
     }
 
@@ -305,26 +310,39 @@ public class MonitoringService {
         long memUsed = 0;
         long memMax = server.maxMemoryMb();
 
+        boolean isBukkitEnv = false;
+        try {
+            Class<?> bukkitClass = Class.forName("org.bukkit.Bukkit");
+            Object serverObj = bukkitClass.getMethod("getServer").invoke(null);
+            if (serverObj != null) {
+                isBukkitEnv = true;
+            }
+        } catch (Throwable ignored) {}
+
         MinecraftPing.PingResult ping = MinecraftPing.PingResult.offline();
         if (state == ProcessState.RUNNING || state == ProcessState.STARTING) {
             cpu = Math.max(0.0, osBean.getProcessCpuLoad() * 100.0);
             memUsed = (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()) / (1024 * 1024);
-            ping = MinecraftPing.ping("127.0.0.1", server.serverPort(), 1500);
+            if (!isBukkitEnv) {
+                ping = MinecraftPing.ping("127.0.0.1", server.serverPort(), 1500);
+            }
         }
 
         int onlinePlayers = ping.onlinePlayers();
         int maxPlayers = ping.maxPlayers();
         String motd = ping.motd();
 
-        try {
-            Class<?> bukkitClass = Class.forName("org.bukkit.Bukkit");
-            Object serverObj = bukkitClass.getMethod("getServer").invoke(null);
-            if (serverObj != null) {
-                onlinePlayers = ((java.util.Collection<?>) bukkitClass.getMethod("getOnlinePlayers").invoke(null)).size();
-                maxPlayers = (int) bukkitClass.getMethod("getMaxPlayers").invoke(null);
-                motd = (String) bukkitClass.getMethod("getMotd").invoke(null);
-            }
-        } catch (Throwable ignored) {}
+        if (isBukkitEnv) {
+            try {
+                Class<?> bukkitClass = Class.forName("org.bukkit.Bukkit");
+                Object serverObj = bukkitClass.getMethod("getServer").invoke(null);
+                if (serverObj != null) {
+                    onlinePlayers = ((java.util.Collection<?>) bukkitClass.getMethod("getOnlinePlayers").invoke(null)).size();
+                    maxPlayers = (int) bukkitClass.getMethod("getMaxPlayers").invoke(null);
+                    motd = (String) bukkitClass.getMethod("getMotd").invoke(null);
+                }
+            } catch (Throwable ignored) {}
+        }
 
         ServerMetrics metrics = new ServerMetrics(
                 server.id(),
@@ -338,7 +356,7 @@ public class MonitoringService {
                 uptime,
                 onlinePlayers,
                 maxPlayers,
-                ping.pingMs(),
+                isBukkitEnv ? 0L : ping.pingMs(),
                 motd
         );
 

@@ -315,10 +315,11 @@ public class CraftPanelServer {
         }
 
         for (MinecraftServer s : serverService.listServers()) {
-            if (s.autoStart()) {
+            ServerProcess proc = processManager.getProcess(s);
+            if (s.autoStart() && proc != null && !proc.isHostInstance()) {
                 try {
                     LOGGER.info("Auto-starting configured server {}", s.name());
-                    processManager.getProcess(s).start();
+                    proc.start();
                 } catch (Exception e) {
                     LOGGER.error("Failed to auto-start server {}", s.name(), e);
                 }
