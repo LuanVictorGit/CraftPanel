@@ -68,6 +68,10 @@ public class ModrinthController {
         }
     }
 
+    public void getGameVersions(Context ctx) {
+        ctx.json(modrinthClient.getGameVersions());
+    }
+
     public void getProject(Context ctx) {
         String idOrSlug = ctx.pathParam("idOrSlug");
         Optional<ModrinthProject> project = modrinthClient.getProject(idOrSlug);

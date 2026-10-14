@@ -3,7 +3,8 @@ import { toast, modal, formatBytes, escapeHtml, loadingModal } from '../ui.js';
 import { i18n } from '../i18n.js';
 
 const ALL_MC_VERSIONS = [
-  '1.21.4', '1.21.3', '1.21.2', '1.21.1', '1.21',
+  '26.3', '26.2', '26.1.2', '26.1.1', '26.1', '26.0',
+  '1.21.11', '1.21.10', '1.21.9', '1.21.8', '1.21.7', '1.21.6', '1.21.5', '1.21.4', '1.21.3', '1.21.2', '1.21.1', '1.21',
   '1.20.6', '1.20.5', '1.20.4', '1.20.3', '1.20.2', '1.20.1', '1.20',
   '1.19.4', '1.19.3', '1.19.2', '1.19.1', '1.19',
   '1.18.2', '1.18.1', '1.18',
@@ -125,6 +126,29 @@ export async function renderModrinth(root, state) {
   });
 
   await executeSearch(serverId);
+
+  api.get('/api/modrinth/game-versions').then(versions => {
+    if (Array.isArray(versions) && versions.length > 0) {
+      const select = document.getElementById('modrinth-version-filter');
+      if (!select) return;
+      const currentVal = select.value;
+      const merged = Array.from(new Set([...versions, ...ALL_MC_VERSIONS]));
+      merged.sort((a, b) => {
+        const a26 = a.startsWith('26');
+        const b26 = b.startsWith('26');
+        if (a26 && !b26) return -1;
+        if (!a26 && b26) return 1;
+        return b.localeCompare(a, undefined, { numeric: true, sensitivity: 'base' });
+      });
+      let html = `<option value="">${i18n.t('allVersions')}</option>`;
+      if (serverMcVersion && !merged.includes(serverMcVersion)) {
+        html += `<option value="${serverMcVersion}">${serverMcVersion} (${serverForkName || 'Server'})</option>`;
+      }
+      html += merged.map(v => `<option value="${v}">${v}</option>`).join('');
+      select.innerHTML = html;
+      select.value = currentVal;
+    }
+  }).catch(() => {});
 }
 
 async function executeSearch(serverId, targetPage = null) {

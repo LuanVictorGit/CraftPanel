@@ -306,4 +306,48 @@ public class ModrinthClient {
                 node.path("date_published").asText()
         );
     }
+
+    private List<String> cachedGameVersions = null;
+    private long lastGameVersionsFetch = 0L;
+
+    public synchronized List<String> getGameVersions() {
+        long now = System.currentTimeMillis();
+        if (cachedGameVersions != null && (now - lastGameVersionsFetch) < 3600000L) {
+            return cachedGameVersions;
+        }
+
+        try {
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(baseUrl + "/tag/game_version"))
+                    .header("User-Agent", userAgent)
+                    .GET()
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() == 200) {
+                JsonNode array = mapper.readTree(response.body());
+                List<String> list = new ArrayList<>();
+                if (array.isArray()) {
+                    for (int i = array.size() - 1; i >= 0; i--) {
+                        JsonNode item = array.get(i);
+                        if ("release".equalsIgnoreCase(item.path("version_type").asText())) {
+                            String v = item.path("version").asText();
+                            if (v != null && !v.isBlank() && !list.contains(v)) {
+                                list.add(v);
+                            }
+                        }
+                    }
+                }
+                if (!list.isEmpty()) {
+                    cachedGameVersions = list;
+                    lastGameVersionsFetch = now;
+                    return list;
+                }
+            }
+        } catch (Exception e) {
+            LOGGER.warn("Failed to fetch game versions from Modrinth: {}", e.getMessage());
+        }
+
+        return cachedGameVersions != null ? cachedGameVersions : List.of();
+    }
 }

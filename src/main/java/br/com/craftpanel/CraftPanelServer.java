@@ -235,6 +235,7 @@ public class CraftPanelServer {
         app.post("/api/servers/{id}/plugins/upload", pluginController::uploadPlugin);
 
         app.get("/api/modrinth/search", modrinthController::search);
+        app.get("/api/modrinth/game-versions", modrinthController::getGameVersions);
         app.get("/api/modrinth/project/{idOrSlug}", modrinthController::getProject);
         app.get("/api/modrinth/project/{idOrSlug}/versions", modrinthController::getVersions);
         app.post("/api/servers/{id}/modrinth/install", modrinthController::install);
