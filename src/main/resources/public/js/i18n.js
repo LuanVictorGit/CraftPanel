@@ -222,7 +222,9 @@ const translations = {
     deletePluginConfigDesc: "Removes the plugin directory under plugins/ containing config.yml and saved data.",
     deletingPlugin: "Unloading & Deleting Plugin",
     pluginDeletedSuccess: "Plugin unloaded and deleted successfully!",
-    noCompatibleVersion: "No version of this plugin supports your server platform.",
+    noCompatibleVersion: "No version of this plugin is compatible with your server.",
+    compatibleOnlyNotice: "Showing only plugins compatible with {server}.",
+    compatibleVersions: "Compatible versions",
     jarFilesOnly: "Only .jar plugin files are supported.",
 
     // Server Lifecycle
@@ -531,7 +533,9 @@ const translations = {
     deletePluginConfigDesc: "Remove a pasta do plugin dentro de plugins/ contendo o config.yml e dados salvos.",
     deletingPlugin: "Descarregando e Excluindo Plugin",
     pluginDeletedSuccess: "Plugin descarregado e excluído com sucesso!",
-    noCompatibleVersion: "Nenhuma versão deste plugin é compatível com a plataforma do seu servidor.",
+    noCompatibleVersion: "Nenhuma versão deste plugin é compatível com o seu servidor.",
+    compatibleOnlyNotice: "Mostrando apenas plugins compatíveis com {server}.",
+    compatibleVersions: "Versões compatíveis",
     jarFilesOnly: "Apenas arquivos .jar de plugin são suportados.",
 
     // Server Lifecycle

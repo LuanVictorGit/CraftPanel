@@ -2,7 +2,6 @@ import { api } from '../api.js';
 import { toast, modal, formatBytes, escapeHtml, loadingModal } from '../ui.js';
 import { i18n } from '../i18n.js';
 import { icons } from '../icons.js';
-import { ALL_MC_VERSIONS } from './modrinth.js';
 
 export async function renderPlugins(root, state) {
   const serverId = state.activeServerId || 'local';
@@ -230,32 +229,12 @@ function renderPluginsTable(serverId, plugins) {
 }
 
 async function openInstallPluginModal(serverId) {
-  let detectedLoader = '';
-  let serverForkName = '';
-  let serverMcVersion = '';
-
+  let serverLabel = '';
   try {
     const res = await api.get('/api/servers/' + serverId);
     const srv = res?.server;
-    if (srv) {
-      const soft = (srv.software || '').toLowerCase();
-      serverForkName = srv.software || '';
-      serverMcVersion = srv.minecraftVersion || '';
-      if (soft.includes('folia')) {
-        detectedLoader = 'folia';
-      } else if (soft.includes('purpur')) {
-        detectedLoader = 'purpur';
-      } else if (soft.includes('paper')) {
-        detectedLoader = 'paper';
-      } else if (soft.includes('spigot')) {
-        detectedLoader = 'spigot';
-      } else if (soft.includes('bukkit')) {
-        detectedLoader = 'bukkit';
-      }
-    }
+    if (srv) serverLabel = `${srv.software || ''} ${srv.minecraftVersion || ''}`.trim();
   } catch (e) {}
-
-  const versionOptions = ALL_MC_VERSIONS.map(v => `<option value="${v}">${v}</option>`).join('');
 
   modal.open({
     title: i18n.t('installPlugin'),
@@ -272,36 +251,15 @@ async function openInstallPluginModal(serverId) {
           <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
             <input type="text" id="modal-modrinth-search" class="form-input" placeholder="${i18n.t('searchPlaceholder')}" style="flex:1;min-width:180px;">
 
-            <div style="width:130px;">
-              <select id="modal-modrinth-version" class="form-select" title="${i18n.t('minecraftVersion')}" style="font-size:12px;padding:6px 8px;">
-                <option value="">${i18n.t('allVersions')}</option>
-                ${serverMcVersion && !ALL_MC_VERSIONS.includes(serverMcVersion) ? `<option value="${escapeHtml(serverMcVersion)}">${escapeHtml(serverMcVersion)} (${escapeHtml(serverForkName || 'Server')})</option>` : ''}
-                ${versionOptions}
-              </select>
-            </div>
-
-            <div style="width:130px;">
-              <select id="modal-modrinth-loader" class="form-select" title="${i18n.t('serverForkFilter')}" style="font-size:12px;padding:6px 8px;">
-                <option value="">${i18n.t('allPlatforms')}</option>
-                <option value="folia" ${detectedLoader === 'folia' ? 'selected' : ''}>Folia</option>
-                <option value="paper" ${detectedLoader === 'paper' ? 'selected' : ''}>Paper</option>
-                <option value="purpur" ${detectedLoader === 'purpur' ? 'selected' : ''}>Purpur</option>
-                <option value="spigot" ${detectedLoader === 'spigot' ? 'selected' : ''}>Spigot</option>
-                <option value="bukkit" ${detectedLoader === 'bukkit' ? 'selected' : ''}>Bukkit</option>
-                <option value="velocity" ${detectedLoader === 'velocity' ? 'selected' : ''}>Velocity</option>
-                <option value="bungeecord" ${detectedLoader === 'bungeecord' ? 'selected' : ''}>BungeeCord</option>
-              </select>
-            </div>
-
             <button class="btn btn-primary btn-sm" id="modal-btn-search">
               <svg style="width:13px;height:13px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
               <span>${i18n.t('search')}</span>
             </button>
           </div>
 
-          <div id="modal-modrinth-fork-badge" style="display:${detectedLoader ? 'flex' : 'none'};align-items:center;gap:6px;font-size:11px;color:var(--accent-teal);margin-top:-4px;">
+          <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--accent-teal);margin-top:-4px;">
             <svg style="width:13px;height:13px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-            <span>${detectedLoader ? i18n.t('detectedServerFork', { fork: detectedLoader.toUpperCase() }) : ''}</span>
+            <span>${escapeHtml(i18n.t('compatibleOnlyNotice', { server: serverLabel || 'Minecraft' }))}</span>
           </div>
 
           <div id="modal-modrinth-results" style="max-height:360px;min-height:200px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding-right:4px;">
@@ -349,10 +307,7 @@ async function openInstallPluginModal(serverId) {
   const tabContentModrinth = document.getElementById('tab-content-modrinth');
   const tabContentUpload = document.getElementById('tab-content-upload');
   const searchInput = document.getElementById('modal-modrinth-search');
-  const versionSelect = document.getElementById('modal-modrinth-version');
-  const loaderSelect = document.getElementById('modal-modrinth-loader');
   const searchBtn = document.getElementById('modal-btn-search');
-  const forkBadgeEl = document.getElementById('modal-modrinth-fork-badge');
   const resultsContainer = document.getElementById('modal-modrinth-results');
   const paginationEl = document.getElementById('modal-modrinth-pagination');
   const paginationInfoEl = document.getElementById('modal-pagination-info');
@@ -367,9 +322,7 @@ async function openInstallPluginModal(serverId) {
     pageSize: 10,
     totalHits: 0,
     totalPages: 1,
-    query: '',
-    version: '',
-    loader: ''
+    query: ''
   };
   let modalSearchSeq = 0;
 
@@ -392,21 +345,11 @@ async function openInstallPluginModal(serverId) {
       modalPagination.currentPage = targetPage;
     } else {
       modalPagination.query = searchInput?.value.trim() || '';
-      modalPagination.version = versionSelect?.value || '';
-      modalPagination.loader = loaderSelect?.value || '';
     }
     if (!resultsContainer) return;
 
-    const { query, version, loader } = modalPagination;
+    const { query } = modalPagination;
     const seq = ++modalSearchSeq;
-
-    if (forkBadgeEl) {
-      forkBadgeEl.style.display = loader ? 'flex' : 'none';
-      const badgeSpan = forkBadgeEl.querySelector('span');
-      if (badgeSpan && loader) {
-        badgeSpan.textContent = i18n.t('detectedServerFork', { fork: loader.toUpperCase() });
-      }
-    }
 
     resultsContainer.innerHTML = `<div style="text-align:center;padding:24px;color:var(--text-muted);">${i18n.t('searchingModrinth')}</div>`;
     if (paginationEl) paginationEl.style.display = 'none';
@@ -416,8 +359,7 @@ async function openInstallPluginModal(serverId) {
     try {
       const res = await api.get('/api/modrinth/search', {
         query: query || undefined,
-        version: version || undefined,
-        loader: loader || undefined,
+        serverId,
         limit: modalPagination.pageSize,
         offset: offset
       });
@@ -577,16 +519,6 @@ async function openInstallPluginModal(serverId) {
     }
   });
 
-  versionSelect?.addEventListener('change', () => {
-    modalPagination.currentPage = 1;
-    performModalSearch();
-  });
-
-  loaderSelect?.addEventListener('change', () => {
-    modalPagination.currentPage = 1;
-    performModalSearch();
-  });
-
   dropZone?.addEventListener('click', () => fileInput?.click());
   dropZone?.addEventListener('dragover', (e) => e.preventDefault());
   dropZone?.addEventListener('drop', (e) => {
@@ -600,29 +532,6 @@ async function openInstallPluginModal(serverId) {
     uploadPluginFile(file, serverId);
   });
   fileInput?.addEventListener('change', (e) => handlePluginUpload(e, serverId));
-
-  api.get('/api/modrinth/game-versions').then(versions => {
-    if (Array.isArray(versions) && versions.length > 0) {
-      const select = document.getElementById('modal-modrinth-version');
-      if (!select) return;
-      const currentVal = select.value;
-      const merged = Array.from(new Set([...versions, ...ALL_MC_VERSIONS]));
-      merged.sort((a, b) => {
-        const a26 = a.startsWith('26');
-        const b26 = b.startsWith('26');
-        if (a26 && !b26) return -1;
-        if (!a26 && b26) return 1;
-        return b.localeCompare(a, undefined, { numeric: true, sensitivity: 'base' });
-      });
-      let html = `<option value="">${i18n.t('allVersions')}</option>`;
-      if (serverMcVersion && !merged.includes(serverMcVersion)) {
-        html += `<option value="${escapeHtml(serverMcVersion)}">${escapeHtml(serverMcVersion)} (${escapeHtml(serverForkName || 'Server')})</option>`;
-      }
-      html += merged.map(v => `<option value="${v}">${v}</option>`).join('');
-      select.innerHTML = html;
-      select.value = currentVal;
-    }
-  }).catch(() => {});
 
   performModalSearch();
 }

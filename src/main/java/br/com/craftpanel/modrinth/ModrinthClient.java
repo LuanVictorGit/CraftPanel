@@ -194,6 +194,26 @@ public class ModrinthClient {
         return list;
     }
 
+    /** The Modrinth version that published a file, looked up by the file's SHA-512 or SHA-1 hash. */
+    public Optional<ModrinthVersion> getVersionByFileHash(String hash) throws Exception {
+        String algorithm = hash.length() == 128 ? "sha512" : "sha1";
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(baseUrl + "/version_file/" + URLEncoder.encode(hash, StandardCharsets.UTF_8) + "?algorithm=" + algorithm))
+                .header("User-Agent", userAgent)
+                .timeout(API_TIMEOUT)
+                .GET()
+                .build();
+
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() == 404) {
+            return Optional.empty();
+        }
+        if (response.statusCode() != 200) {
+            throw new IllegalStateException("Modrinth API error " + response.statusCode());
+        }
+        return Optional.of(mapVersion(mapper.readTree(response.body())));
+    }
+
     public void downloadFile(String downloadUrl, Path destination, Consumer<Integer> progressConsumer, String expectedHash) throws Exception {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(downloadUrl))

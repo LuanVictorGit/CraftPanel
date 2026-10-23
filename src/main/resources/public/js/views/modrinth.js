@@ -2,61 +2,24 @@ import { api } from '../api.js';
 import { toast, modal, formatBytes, escapeHtml, loadingModal } from '../ui.js';
 import { i18n } from '../i18n.js';
 
-export const ALL_MC_VERSIONS = [
-  '26.3', '26.2', '26.1.2', '26.1.1', '26.1', '26.0',
-  '1.21.11', '1.21.10', '1.21.9', '1.21.8', '1.21.7', '1.21.6', '1.21.5', '1.21.4', '1.21.3', '1.21.2', '1.21.1', '1.21',
-  '1.20.6', '1.20.5', '1.20.4', '1.20.3', '1.20.2', '1.20.1', '1.20',
-  '1.19.4', '1.19.3', '1.19.2', '1.19.1', '1.19',
-  '1.18.2', '1.18.1', '1.18',
-  '1.17.1', '1.17',
-  '1.16.5', '1.16.4', '1.16.3', '1.16.2', '1.16.1', '1.16',
-  '1.15.2', '1.15.1', '1.15',
-  '1.14.4', '1.14',
-  '1.13.2', '1.13',
-  '1.12.2', '1.12',
-  '1.11.2', '1.10.2', '1.9.4', '1.8.8'
-];
-
 let paginationState = {
   currentPage: 1,
   pageSize: 24,
   totalHits: 0,
   totalPages: 1,
-  query: '',
-  version: '',
-  loader: ''
+  query: ''
 };
 let searchSeq = 0;
 
 export async function renderModrinth(root, state) {
   const serverId = state.activeServerId || 'local';
 
-  let detectedLoader = '';
-  let serverForkName = '';
-  let serverMcVersion = '';
-
+  let serverLabel = '';
   try {
     const res = await api.get('/api/servers/' + serverId);
     const srv = res?.server;
-    if (srv) {
-      const soft = (srv.software || '').toLowerCase();
-      serverForkName = srv.software || '';
-      serverMcVersion = srv.minecraftVersion || '';
-      if (soft.includes('folia')) {
-        detectedLoader = 'folia';
-      } else if (soft.includes('purpur')) {
-        detectedLoader = 'purpur';
-      } else if (soft.includes('paper')) {
-        detectedLoader = 'paper';
-      } else if (soft.includes('spigot')) {
-        detectedLoader = 'spigot';
-      } else if (soft.includes('bukkit')) {
-        detectedLoader = 'bukkit';
-      }
-    }
+    if (srv) serverLabel = `${srv.software || ''} ${srv.minecraftVersion || ''}`.trim();
   } catch (e) {}
-
-  const versionOptions = ALL_MC_VERSIONS.map(v => `<option value="${v}">${v}</option>`).join('');
 
   root.innerHTML = `
     <div style="display:flex;flex-direction:column;gap:18px;">
@@ -67,26 +30,6 @@ export async function renderModrinth(root, state) {
             <input type="text" id="modrinth-search-input" class="form-input" placeholder="${i18n.t('searchPlaceholder')}">
           </div>
 
-          <div style="width:170px;">
-            <select id="modrinth-version-filter" class="form-select" title="${i18n.t('minecraftVersion')}">
-              <option value="">${i18n.t('allVersions')}</option>
-              ${serverMcVersion && !ALL_MC_VERSIONS.includes(serverMcVersion) ? `<option value="${escapeHtml(serverMcVersion)}">${escapeHtml(serverMcVersion)} (${escapeHtml(serverForkName || 'Server')})</option>` : ''}
-              ${versionOptions}
-            </select>
-          </div>
-
-          <div style="width:160px;">
-            <select id="modrinth-loader-filter" class="form-select" title="${i18n.t('serverForkFilter')}">
-              <option value="">${i18n.t('allPlatforms')}</option>
-              <option value="folia" ${detectedLoader === 'folia' ? 'selected' : ''}>Folia</option>
-              <option value="paper" ${detectedLoader === 'paper' ? 'selected' : ''}>Paper</option>
-              <option value="purpur" ${detectedLoader === 'purpur' ? 'selected' : ''}>Purpur</option>
-              <option value="spigot" ${detectedLoader === 'spigot' ? 'selected' : ''}>Spigot</option>
-              <option value="bukkit" ${detectedLoader === 'bukkit' ? 'selected' : ''}>Bukkit</option>
-              <option value="velocity" ${detectedLoader === 'velocity' ? 'selected' : ''}>Velocity</option>
-              <option value="bungeecord" ${detectedLoader === 'bungeecord' ? 'selected' : ''}>BungeeCord</option>
-            </select>
-          </div>
 
           <button class="btn btn-primary" id="btn-search-modrinth">
             <svg style="width:15px;height:15px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -94,12 +37,10 @@ export async function renderModrinth(root, state) {
           </button>
         </div>
 
-        ${detectedLoader ? `
-          <div id="modrinth-fork-badge" style="margin-top:10px;font-size:12px;color:var(--accent-teal);display:flex;align-items:center;gap:6px;">
-            <svg style="width:14px;height:14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-            <span>${i18n.t('detectedServerFork', { fork: detectedLoader.toUpperCase() })}</span>
-          </div>
-        ` : ''}
+        <div style="margin-top:10px;font-size:12px;color:var(--accent-teal);display:flex;align-items:center;gap:6px;">
+          <svg style="width:14px;height:14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+          <span>${escapeHtml(i18n.t('compatibleOnlyNotice', { server: serverLabel || 'Minecraft' }))}</span>
+        </div>
       </div>
 
       <!-- Results Grid -->
@@ -121,39 +62,8 @@ export async function renderModrinth(root, state) {
       executeSearch(serverId);
     }
   });
-  document.getElementById('modrinth-version-filter')?.addEventListener('change', () => {
-    paginationState.currentPage = 1;
-    executeSearch(serverId);
-  });
-  document.getElementById('modrinth-loader-filter')?.addEventListener('change', () => {
-    paginationState.currentPage = 1;
-    executeSearch(serverId);
-  });
 
   await executeSearch(serverId);
-
-  api.get('/api/modrinth/game-versions').then(versions => {
-    if (Array.isArray(versions) && versions.length > 0) {
-      const select = document.getElementById('modrinth-version-filter');
-      if (!select) return;
-      const currentVal = select.value;
-      const merged = Array.from(new Set([...versions, ...ALL_MC_VERSIONS]));
-      merged.sort((a, b) => {
-        const a26 = a.startsWith('26');
-        const b26 = b.startsWith('26');
-        if (a26 && !b26) return -1;
-        if (!a26 && b26) return 1;
-        return b.localeCompare(a, undefined, { numeric: true, sensitivity: 'base' });
-      });
-      let html = `<option value="">${i18n.t('allVersions')}</option>`;
-      if (serverMcVersion && !merged.includes(serverMcVersion)) {
-        html += `<option value="${escapeHtml(serverMcVersion)}">${escapeHtml(serverMcVersion)} (${escapeHtml(serverForkName || 'Server')})</option>`;
-      }
-      html += merged.map(v => `<option value="${v}">${v}</option>`).join('');
-      select.innerHTML = html;
-      select.value = currentVal;
-    }
-  }).catch(() => {});
 }
 
 async function executeSearch(serverId, targetPage = null) {
@@ -161,21 +71,10 @@ async function executeSearch(serverId, targetPage = null) {
     paginationState.currentPage = targetPage;
   } else {
     paginationState.query = document.getElementById('modrinth-search-input')?.value.trim() || '';
-    paginationState.version = document.getElementById('modrinth-version-filter')?.value || '';
-    paginationState.loader = document.getElementById('modrinth-loader-filter')?.value || '';
   }
 
-  const { query, version, loader } = paginationState;
+  const { query } = paginationState;
   const seq = ++searchSeq;
-
-  const badgeEl = document.getElementById('modrinth-fork-badge');
-  if (badgeEl) {
-    badgeEl.style.display = loader ? 'flex' : 'none';
-    const badgeText = badgeEl.querySelector('span');
-    if (badgeText && loader) {
-      badgeText.textContent = i18n.t('detectedServerFork', { fork: loader.toUpperCase() });
-    }
-  }
 
   const container = document.getElementById('modrinth-results-container');
   if (container) {
@@ -187,8 +86,7 @@ async function executeSearch(serverId, targetPage = null) {
   try {
     const res = await api.get('/api/modrinth/search', {
       query: query || undefined,
-      version: version || undefined,
-      loader: loader || undefined,
+      serverId,
       limit: paginationState.pageSize,
       offset: offset
     });
@@ -350,7 +248,7 @@ async function openProjectModal(projectId, serverId) {
             </a>
           </div>
 
-          <h4 style="font-size:14px;font-weight:700;margin-top:8px;">${i18n.t('allVersions')}</h4>
+          <h4 style="font-size:14px;font-weight:700;margin-top:8px;">${i18n.t('compatibleVersions')}</h4>
           <div style="max-height:300px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;">
             <table class="data-table">
               <thead>
@@ -363,6 +261,7 @@ async function openProjectModal(projectId, serverId) {
                 </tr>
               </thead>
               <tbody>
+                ${versions.length === 0 ? `<tr><td colspan="5" style="text-align:center;padding:18px;color:var(--text-muted);">${i18n.t('noCompatibleVersion')}</td></tr>` : ''}
                 ${versions.map(vItem => {
                   const v = vItem.version || vItem;
                   const comp = vItem.compatibility;

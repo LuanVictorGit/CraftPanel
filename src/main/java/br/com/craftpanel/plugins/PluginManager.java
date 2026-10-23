@@ -19,7 +19,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
-import java.util.Iterator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -294,17 +294,18 @@ public class PluginManager {
                     Method loadPluginMethod = pm.getClass().getMethod("loadPlugin", File.class);
                     Object loaded = loadPluginMethod.invoke(pm, file);
                     if (loaded != null) {
-                        try {
-                            Method onLoad = loaded.getClass().getMethod("onLoad");
-                            onLoad.invoke(loaded);
-                        } catch (Throwable ignored) {}
-
-                        registerPluginCommands(loaded);
+                        // Paper's runtime loader already runs onLoad; a second call initialises some plugins twice.
+                        if (!loaderRunsOnLoad(pm)) {
+                            try {
+                                loaded.getClass().getMethod("onLoad").invoke(loaded);
+                            } catch (Throwable ignored) {}
+                        }
 
                         Method enablePlugin = pm.getClass().getMethod("enablePlugin", Class.forName("org.bukkit.plugin.Plugin"));
                         enablePlugin.invoke(pm, loaded);
 
-                        rebindPluginCommands(loaded);
+                        // enablePlugin registers the plugin.yml commands itself; only what is still missing is added.
+                        registerMissingPluginCommands(loaded);
                         PluginCpuProfiler.getInstance().registerPlugin((org.bukkit.plugin.Plugin) loaded);
                         syncServerCommands();
                         future.complete(true);
@@ -362,6 +363,9 @@ public class PluginManager {
                     if (target != null) {
                         Method disablePlugin = pm.getClass().getMethod("disablePlugin", Class.forName("org.bukkit.plugin.Plugin"));
                         disablePlugin.invoke(pm, target);
+                        // Bukkit keeps a disabled plugin's commands, which then fail with "plugin is disabled".
+                        unregisterPluginCommands(target);
+                        syncServerCommands();
                     }
                     future.complete(true);
                 } catch (Throwable t) {
@@ -489,64 +493,7 @@ public class PluginManager {
             } catch (Throwable ignored) {}
 
             unregisterFromPaper(target);
-
-            try {
-                Object serverObj = bukkitClass.getMethod("getServer").invoke(null);
-                Method getCommandMap = serverObj.getClass().getMethod("getCommandMap");
-                Object commandMap = getCommandMap.invoke(serverObj);
-                if (commandMap != null) {
-                    Map<String, Object> knownCommands = getKnownCommandsMap(commandMap);
-                    if (knownCommands != null) {
-                        ClassLoader cl = target.getClass().getClassLoader();
-                    Class<?> picClass = null;
-                    try {
-                        picClass = Class.forName("org.bukkit.command.PluginIdentifiableCommand");
-                    } catch (Throwable ignored) {}
-                    final Class<?> finalPicClass = picClass;
-
-                    List<Object> removedCmds = new ArrayList<>();
-                    Iterator<? extends Map.Entry<?, ?>> it = knownCommands.entrySet().iterator();
-                    while (it.hasNext()) {
-                        Map.Entry<?, ?> entry = it.next();
-                        Object cmd = entry.getValue();
-                        if (cmd == null) continue;
-
-                        boolean match = false;
-                        if (cmd.getClass().getClassLoader() == cl) {
-                            match = true;
-                        } else if (finalPicClass != null && finalPicClass.isInstance(cmd)) {
-                            try {
-                                Method getPluginMethod = cmd.getClass().getMethod("getPlugin");
-                                Object owning = getPluginMethod.invoke(cmd);
-                                if (owning == target || (owning != null && name.equalsIgnoreCase(owning.getClass().getMethod("getName").invoke(owning).toString()))) {
-                                    match = true;
-                                }
-                            } catch (Throwable ignored) {}
-                        } else {
-                            try {
-                                Method getPluginMethod = cmd.getClass().getMethod("getPlugin");
-                                Object owning = getPluginMethod.invoke(cmd);
-                                if (owning == target) {
-                                    match = true;
-                                }
-                            } catch (Throwable ignored) {}
-                        }
-
-                        if (match) {
-                            removedCmds.add(cmd);
-                            it.remove();
-                        }
-                    }
-
-                    Class<?> cmdMapClass = Class.forName("org.bukkit.command.CommandMap");
-                    for (Object cmd : removedCmds) {
-                        try {
-                            cmd.getClass().getMethod("unregister", cmdMapClass).invoke(cmd, commandMap);
-                        } catch (Throwable ignored) {}
-                    }
-                }
-            }
-        } catch (Throwable ignored) {}
+            unregisterPluginCommands(target);
 
             ClassLoader classLoader = target.getClass().getClassLoader();
             if (classLoader instanceof URLClassLoader urlCl) {
@@ -632,8 +579,64 @@ public class PluginManager {
         return null;
     }
 
+    // Takes every command the plugin owns out of the command map. Paper's map (BukkitBrigForwardingMap) is backed by the
+    // Brigadier tree and its iterators cannot remove, so labels are collected first and removed by key. A command left
+    // behind fails with "plugin is disabled", which players see as "An unexpected error occurred".
+    private void unregisterPluginCommands(Object plugin) {
+        try {
+            Class<?> bukkitClass = Class.forName("org.bukkit.Bukkit");
+            Object serverObj = bukkitClass.getMethod("getServer").invoke(null);
+            Object commandMap = serverObj.getClass().getMethod("getCommandMap").invoke(serverObj);
+            Map<String, Object> knownCommands = getKnownCommandsMap(commandMap);
+            if (knownCommands == null) {
+                return;
+            }
+
+            ClassLoader loader = plugin.getClass().getClassLoader();
+            Map<String, Object> owned = new HashMap<>();
+            for (Map.Entry<String, Object> entry : new ArrayList<>(knownCommands.entrySet())) {
+                if (isOwnedBy(entry.getValue(), plugin, loader)) {
+                    owned.put(entry.getKey(), entry.getValue());
+                }
+            }
+
+            Class<?> cmdMapClass = Class.forName("org.bukkit.command.CommandMap");
+            for (Map.Entry<String, Object> entry : owned.entrySet()) {
+                knownCommands.remove(entry.getKey());
+                try {
+                    entry.getValue().getClass().getMethod("unregister", cmdMapClass).invoke(entry.getValue(), commandMap);
+                } catch (Throwable ignored) {}
+            }
+        } catch (Throwable t) {
+            LOGGER.warn("Could not unregister plugin commands: {}", t.toString());
+        }
+    }
+
+    private static boolean isOwnedBy(Object command, Object plugin, ClassLoader loader) {
+        if (command == null) {
+            return false;
+        }
+        if (command.getClass().getClassLoader() == loader) {
+            return true;
+        }
+        try {
+            return command.getClass().getMethod("getPlugin").invoke(command) == plugin;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    // Paper (1.19.3+) loads runtime plugins through its own provider storage, which already calls onLoad.
+    private static boolean loaderRunsOnLoad(Object pluginManager) {
+        try {
+            return pluginManager.getClass().getField("paperPluginManager").get(pluginManager) != null;
+        } catch (Throwable notPaper) {
+            return false;
+        }
+    }
+
     @SuppressWarnings("unchecked")
-    private void registerPluginCommands(Object pluginObj) {
+    private void registerMissingPluginCommands(Object pluginObj) {
         if (pluginObj == null) {
             return;
         }
@@ -666,7 +669,6 @@ public class PluginManager {
             Class<?> pluginCommandClass = Class.forName("org.bukkit.command.PluginCommand");
             Class<?> executorClass = Class.forName("org.bukkit.command.CommandExecutor");
             Class<?> tabCompleterClass = Class.forName("org.bukkit.command.TabCompleter");
-            Class<?> cmdMapClass = Class.forName("org.bukkit.command.CommandMap");
 
             Constructor<?> ctor = pluginCommandClass.getDeclaredConstructor(String.class, pluginClass);
             ctor.setAccessible(true);
@@ -679,20 +681,10 @@ public class PluginManager {
                     continue;
                 }
 
-                String lower = cmdName.toLowerCase();
-                String namespaced = pluginName.toLowerCase() + ":" + lower;
-
-                Object existing = knownCommands.remove(lower);
-                if (existing != null) {
-                    try {
-                        existing.getClass().getMethod("unregister", cmdMapClass).invoke(existing, commandMap);
-                    } catch (Throwable ignored) {}
-                }
-                Object existingNs = knownCommands.remove(namespaced);
-                if (existingNs != null) {
-                    try {
-                        existingNs.getClass().getMethod("unregister", cmdMapClass).invoke(existingNs, commandMap);
-                    } catch (Throwable ignored) {}
+                // enablePlugin always registers the namespaced label; when it is there, the command already exists.
+                String namespaced = pluginName.toLowerCase() + ":" + cmdName.toLowerCase();
+                if (knownCommands.containsKey(namespaced)) {
+                    continue;
                 }
 
                 Object pluginCmd = ctor.newInstance(cmdName, pluginObj);
@@ -719,17 +711,12 @@ public class PluginManager {
                         List<String> strAliases = new ArrayList<>();
                         for (Object a : aliasList) {
                             if (a != null) {
-                                String aliasStr = a.toString();
-                                strAliases.add(aliasStr);
-                                knownCommands.remove(aliasStr.toLowerCase());
-                                knownCommands.remove(pluginName.toLowerCase() + ":" + aliasStr.toLowerCase());
+                                strAliases.add(a.toString());
                             }
                         }
                         pluginCmd.getClass().getMethod("setAliases", List.class).invoke(pluginCmd, strAliases);
                     } else if (aliases instanceof String singleAlias) {
                         pluginCmd.getClass().getMethod("setAliases", List.class).invoke(pluginCmd, List.of(singleAlias));
-                        knownCommands.remove(singleAlias.toLowerCase());
-                        knownCommands.remove(pluginName.toLowerCase() + ":" + singleAlias.toLowerCase());
                     }
                 }
 
@@ -749,50 +736,6 @@ public class PluginManager {
         } catch (Throwable t) {
             LOGGER.error("Failed to register plugin commands", t);
         }
-    }
-
-    @SuppressWarnings("unchecked")
-    private void rebindPluginCommands(Object pluginObj) {
-        if (pluginObj == null) {
-            return;
-        }
-        try {
-            Class<?> bukkitClass = Class.forName("org.bukkit.Bukkit");
-            Object serverObj = bukkitClass.getMethod("getServer").invoke(null);
-            Object commandMap = serverObj.getClass().getMethod("getCommandMap").invoke(serverObj);
-            if (commandMap == null) return;
-
-            Method getDesc = pluginObj.getClass().getMethod("getDescription");
-            Object desc = getDesc.invoke(pluginObj);
-            Method getCommands = desc.getClass().getMethod("getCommands");
-            Map<String, Map<String, Object>> commands = (Map<String, Map<String, Object>>) getCommands.invoke(desc);
-            if (commands == null || commands.isEmpty()) return;
-
-            Method getCommand = commandMap.getClass().getMethod("getCommand", String.class);
-            Class<?> executorClass = Class.forName("org.bukkit.command.CommandExecutor");
-            Class<?> tabCompleterClass = Class.forName("org.bukkit.command.TabCompleter");
-
-            for (String cmdName : commands.keySet()) {
-                if (cmdName == null || cmdName.isBlank()) continue;
-                Object cmd = getCommand.invoke(commandMap, cmdName);
-                if (cmd != null) {
-                    try {
-                        Method getExec = cmd.getClass().getMethod("getExecutor");
-                        Object exec = getExec.invoke(cmd);
-                        if (exec == null && executorClass.isInstance(pluginObj)) {
-                            cmd.getClass().getMethod("setExecutor", executorClass).invoke(cmd, pluginObj);
-                        }
-                    } catch (Throwable ignored) {}
-                    try {
-                        Method getComp = cmd.getClass().getMethod("getTabCompleter");
-                        Object comp = getComp.invoke(cmd);
-                        if (comp == null && tabCompleterClass.isInstance(pluginObj)) {
-                            cmd.getClass().getMethod("setTabCompleter", tabCompleterClass).invoke(cmd, pluginObj);
-                        }
-                    } catch (Throwable ignored) {}
-                }
-            }
-        } catch (Throwable ignored) {}
     }
 
     private void syncServerCommands() {

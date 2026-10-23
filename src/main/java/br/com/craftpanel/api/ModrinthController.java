@@ -59,6 +59,13 @@ public class ModrinthController {
         int limit = ctx.queryParamAsClass("limit", Integer.class).getOrDefault(20);
         int offset = ctx.queryParamAsClass("offset", Integer.class).getOrDefault(0);
 
+        // For a server, only plugins made for its platform and Minecraft version are listed.
+        Optional<MinecraftServer> server = serverOf(ctx);
+        if (server.isPresent()) {
+            loader = server.get().software();
+            version = server.get().minecraftVersion();
+        }
+
         try {
             ModrinthClient.SearchResult result = modrinthClient.search(query, version, loader, index, limit, offset);
             ctx.json(result);
@@ -84,27 +91,26 @@ public class ModrinthController {
         String idOrSlug = ctx.pathParam("idOrSlug");
         String gameVersion = ctx.queryParam("gameVersion");
         String loader = ctx.queryParam("loader");
-        String serverId = ctx.queryParam("serverId");
 
         try {
-            List<ModrinthVersion> versions = modrinthClient.getProjectVersions(idOrSlug, gameVersion, loader);
-            if (serverId != null && !serverId.isBlank()) {
-                Optional<MinecraftServer> serverOpt = serverService.getServer(serverId);
-                if (serverOpt.isPresent()) {
-                    MinecraftServer server = serverOpt.get();
-                    List<Map<String, Object>> enriched = new ArrayList<>();
-                    for (ModrinthVersion ver : versions) {
-                        CompatibilityResult comp = CompatibilityChecker.check(server.software(), server.minecraftVersion(), ver);
+            Optional<MinecraftServer> serverOpt = serverOf(ctx);
+            if (serverOpt.isPresent()) {
+                // Only the builds confirmed for the server's platform and Minecraft version can be installed.
+                MinecraftServer server = serverOpt.get();
+                List<Map<String, Object>> compatible = new ArrayList<>();
+                for (ModrinthVersion ver : modrinthClient.getProjectVersions(idOrSlug, server.minecraftVersion(), server.software())) {
+                    CompatibilityResult comp = CompatibilityChecker.check(server.software(), server.minecraftVersion(), ver);
+                    if (comp.status() == CompatibilityResult.Status.COMPATIBLE_CONFIRMED) {
                         Map<String, Object> map = new HashMap<>();
                         map.put("version", ver);
                         map.put("compatibility", comp);
-                        enriched.add(map);
+                        compatible.add(map);
                     }
-                    ctx.json(enriched);
-                    return;
                 }
+                ctx.json(compatible);
+                return;
             }
-            ctx.json(versions);
+            ctx.json(modrinthClient.getProjectVersions(idOrSlug, gameVersion, loader));
         } catch (Exception e) {
             ctx.status(500).json(Map.of("error", "Failed to fetch versions: " + e.getMessage()));
         }
@@ -139,6 +145,28 @@ public class ModrinthController {
             ctx.status(400).json(Map.of("error", "Only files hosted on the Modrinth CDN can be installed"));
             return;
         }
+        if (expectedHash == null || !expectedHash.trim().matches("[0-9a-fA-F]{40}|[0-9a-fA-F]{128}")) {
+            ctx.status(400).json(Map.of("error", "The file hash published by Modrinth is required"));
+            return;
+        }
+
+        // The file must be a build Modrinth lists for this server's platform and Minecraft version.
+        try {
+            Optional<ModrinthVersion> published = modrinthClient.getVersionByFileHash(expectedHash.trim());
+            if (published.isEmpty()) {
+                ctx.status(400).json(Map.of("error", "This file is not published on Modrinth"));
+                return;
+            }
+            CompatibilityResult comp = CompatibilityChecker.check(server.software(), server.minecraftVersion(), published.get());
+            if (comp.status() != CompatibilityResult.Status.COMPATIBLE_CONFIRMED) {
+                ctx.status(400).json(Map.of("error", "This version is not compatible with " + server.software() + " "
+                        + server.minecraftVersion() + ": " + comp.message()));
+                return;
+            }
+        } catch (Exception e) {
+            ctx.status(502).json(Map.of("error", "Could not check the version on Modrinth: " + e.getMessage()));
+            return;
+        }
 
         Task task = taskManager.submit("MODRINTH_INSTALL", serverId, "Instalando plugin " + projectName, (progress, message) -> {
             message.accept("Preparando diretório de plugins...");
@@ -166,6 +194,11 @@ public class ModrinthController {
 
         auditService.log(user.id(), user.username(), "MODRINTH_INSTALL", "PLUGIN", safeName, "Submitted Modrinth install task for " + projectName, ctx.ip(), "SUCCESS");
         ctx.status(202).json(task);
+    }
+
+    private Optional<MinecraftServer> serverOf(Context ctx) {
+        String serverId = ctx.queryParam("serverId");
+        return serverId == null || serverId.isBlank() ? Optional.empty() : serverService.getServer(serverId);
     }
 
     private static boolean isModrinthCdnUrl(String url) {
