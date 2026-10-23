@@ -18,10 +18,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import io.javalin.http.Context;
 import io.javalin.http.NotFoundResponse;
 
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -128,28 +127,56 @@ public class ModrinthController {
             return;
         }
 
+        String safeName;
+        try {
+            safeName = PluginManager.sanitizeJarName(filename);
+        } catch (IllegalArgumentException e) {
+            ctx.status(400).json(Map.of("error", e.getMessage()));
+            return;
+        }
+        // The jar gets loaded into the server, so only accept Modrinth's own CDN (MODRINTH_INSTALL is not PLUGINS_MANAGE).
+        if (!isModrinthCdnUrl(fileUrl)) {
+            ctx.status(400).json(Map.of("error", "Only files hosted on the Modrinth CDN can be installed"));
+            return;
+        }
+
         Task task = taskManager.submit("MODRINTH_INSTALL", serverId, "Instalando plugin " + projectName, (progress, message) -> {
             message.accept("Preparando diretório de plugins...");
-            Path pluginsDir = Paths.get(server.serverDir(), "plugins");
+            Path pluginsDir = pluginManager.getPluginsDir(server).toPath();
             Files.createDirectories(pluginsDir);
 
-            Path targetFile = pluginsDir.resolve(Paths.get(filename).getFileName().toString());
-            if (Files.exists(targetFile)) {
-                message.accept("Criando backup da versão atual...");
-                Path backupDir = Paths.get(server.serverDir()).resolveSibling("backups").resolve("plugins");
-                Files.createDirectories(backupDir);
-                Path backupFile = backupDir.resolve(targetFile.getFileName().toString() + "." + System.currentTimeMillis() + ".bak");
-                Files.copy(targetFile, backupFile, StandardCopyOption.REPLACE_EXISTING);
+            Path targetFile = pluginsDir.resolve(safeName);
+            Path stagedFile = pluginsDir.resolve(safeName + ".part");
+            try {
+                message.accept("Baixando artefato oficial do Modrinth...");
+                modrinthClient.downloadFile(fileUrl, stagedFile, progress, expectedHash);
+
+                message.accept("Substituindo versão atual (backup automático)...");
+                List<String> replaced = pluginManager.replacePluginJar(server, stagedFile, targetFile);
+                if (!replaced.isEmpty()) {
+                    message.accept("Versões anteriores removidas: " + String.join(", ", replaced));
+                }
+            } finally {
+                Files.deleteIfExists(stagedFile);
             }
 
-            message.accept("Baixando artefato oficial do Modrinth...");
-            modrinthClient.downloadFile(fileUrl, targetFile, progress, expectedHash);
-            message.accept("Plugin instalado e validado com sucesso: " + filename);
+            message.accept("Plugin instalado e validado com sucesso: " + safeName);
             pluginManager.loadPluginAtRuntime(targetFile.toFile());
         });
 
-        auditService.log(user.id(), user.username(), "MODRINTH_INSTALL", "PLUGIN", filename, "Submitted Modrinth install task for " + projectName, ctx.ip(), "SUCCESS");
+        auditService.log(user.id(), user.username(), "MODRINTH_INSTALL", "PLUGIN", safeName, "Submitted Modrinth install task for " + projectName, ctx.ip(), "SUCCESS");
         ctx.status(202).json(task);
+    }
+
+    private static boolean isModrinthCdnUrl(String url) {
+        try {
+            URI uri = URI.create(url);
+            String host = uri.getHost() != null ? uri.getHost().toLowerCase() : "";
+            return "https".equalsIgnoreCase(uri.getScheme())
+                    && (host.equals("cdn.modrinth.com") || host.equals("cdn-raw.modrinth.com"));
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
     }
 
     public void checkUpdates(Context ctx) {

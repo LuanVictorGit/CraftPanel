@@ -3,7 +3,6 @@ package br.com.craftpanel.files;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 
 public class PathValidator {
     public static Path resolveAndValidate(Path rootDir, String relativePath) {
@@ -32,31 +31,44 @@ public class PathValidator {
             throw new SecurityException("Path traversal attempt detected: " + relativePath);
         }
 
-        if (Files.exists(resolved)) {
-            try {
-                Path realResolved = resolved.toRealPath();
-                Path realRoot = normalizedRoot.toRealPath();
-                if (!realResolved.startsWith(realRoot)) {
-                    throw new SecurityException("Symlink target outside root directory: " + relativePath);
-                }
-            } catch (IOException e) {
-                throw new SecurityException("Failed to verify real path: " + relativePath, e);
+        if (Files.isSymbolicLink(resolved) && !Files.exists(resolved)) {
+            throw new SecurityException("Broken symbolic link: " + relativePath);
+        }
+
+        // A path that does not exist yet is checked through its nearest existing ancestor, so nested folders
+        // cannot be created through a link that points outside the root.
+        try {
+            if (!realPathAllowingMissing(resolved).startsWith(realPathAllowingMissing(normalizedRoot))) {
+                throw new SecurityException("Path resolves outside root directory: " + relativePath);
             }
-        } else {
-            Path parent = resolved.getParent();
-            if (parent != null && Files.exists(parent)) {
-                try {
-                    Path realParent = parent.toRealPath();
-                    Path realRoot = normalizedRoot.toRealPath();
-                    if (!realParent.startsWith(realRoot)) {
-                        throw new SecurityException("Parent path resolves outside root: " + relativePath);
-                    }
-                } catch (IOException e) {
-                    throw new SecurityException("Failed to verify real parent path", e);
-                }
-            }
+        } catch (IOException e) {
+            throw new SecurityException("Failed to verify real path: " + relativePath, e);
         }
 
         return resolved;
+    }
+
+    /**
+     * Real path of {@code path} with links resolved, also for paths that do not exist yet (resolved through their
+     * nearest existing ancestor). Falls back to the absolute path when the file system cannot be queried.
+     */
+    public static Path realPath(Path path) {
+        Path absolute = path.toAbsolutePath().normalize();
+        try {
+            return realPathAllowingMissing(absolute);
+        } catch (IOException e) {
+            return absolute;
+        }
+    }
+
+    private static Path realPathAllowingMissing(Path absolute) throws IOException {
+        Path existing = absolute;
+        while (existing != null && !Files.exists(existing)) {
+            existing = existing.getParent();
+        }
+        if (existing == null) {
+            return absolute;
+        }
+        return existing.toRealPath().resolve(existing.relativize(absolute));
     }
 }

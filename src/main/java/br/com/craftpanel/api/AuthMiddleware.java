@@ -8,9 +8,20 @@ import io.javalin.http.Context;
 import io.javalin.http.UnauthorizedResponse;
 import io.javalin.http.ForbiddenResponse;
 
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 public class AuthMiddleware {
+    // What the setup and login screens call before a session exists. /api/auth/me stays protected: the SPA treats
+    // its 401 as "not logged in". Logout is open so an expired session can still clear its cookie.
+    private static final Set<String> PUBLIC_ENDPOINTS = Set.of(
+            "/api/setup/status",
+            "/api/setup/first-admin",
+            "/api/auth/login",
+            "/api/auth/logout"
+    );
+
     private final AuthService authService;
     private final UserService userService;
 
@@ -37,6 +48,11 @@ public class AuthMiddleware {
                     ctx.attribute("session", session.get());
                 }
             }
+        }
+
+        if (getUser(ctx) == null && !PUBLIC_ENDPOINTS.contains(ctx.path())) {
+            ctx.status(401).json(Map.of("error", "Authentication required"));
+            ctx.skipRemainingHandlers();
         }
     }
 

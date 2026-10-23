@@ -121,14 +121,14 @@ function renderPluginsTable(serverId, plugins) {
                     <span class="badge badge-purple" style="font-size:11px;font-weight:700;padding:4px 9px;" title="CraftPanel is the core system plugin and cannot be removed.">Core System</span>
                   ` : `
                     ${p.pendingRestart ? `
-                      <button class="btn btn-primary btn-sm btn-load-plug" data-file="${p.filename}">
+                      <button class="btn btn-primary btn-sm btn-load-plug" data-file="${escapeHtml(p.filename)}">
                         ${i18n.t('loadNow')}
                       </button>
                     ` : ''}
-                    <button class="btn btn-secondary btn-sm btn-toggle-plug" data-file="${p.filename}">
+                    <button class="btn btn-secondary btn-sm btn-toggle-plug" data-file="${escapeHtml(p.filename)}">
                       ${p.enabled ? i18n.t('disable') : i18n.t('enable')}
                     </button>
-                    <button class="btn btn-danger btn-sm btn-delete-plug" data-file="${p.filename}">
+                    <button class="btn btn-danger btn-sm btn-delete-plug" data-file="${escapeHtml(p.filename)}">
                       ${i18n.t('delete')}
                     </button>
                   `}
@@ -235,7 +235,8 @@ async function openInstallPluginModal(serverId) {
   let serverMcVersion = '';
 
   try {
-    const srv = await api.get('/api/servers/' + serverId);
+    const res = await api.get('/api/servers/' + serverId);
+    const srv = res?.server;
     if (srv) {
       const soft = (srv.software || '').toLowerCase();
       serverForkName = srv.software || '';
@@ -274,7 +275,7 @@ async function openInstallPluginModal(serverId) {
             <div style="width:130px;">
               <select id="modal-modrinth-version" class="form-select" title="${i18n.t('minecraftVersion')}" style="font-size:12px;padding:6px 8px;">
                 <option value="">${i18n.t('allVersions')}</option>
-                ${serverMcVersion && !ALL_MC_VERSIONS.includes(serverMcVersion) ? `<option value="${serverMcVersion}">${serverMcVersion} (${serverForkName || 'Server'})</option>` : ''}
+                ${serverMcVersion && !ALL_MC_VERSIONS.includes(serverMcVersion) ? `<option value="${escapeHtml(serverMcVersion)}">${escapeHtml(serverMcVersion)} (${escapeHtml(serverForkName || 'Server')})</option>` : ''}
                 ${versionOptions}
               </select>
             </div>
@@ -365,8 +366,12 @@ async function openInstallPluginModal(serverId) {
     currentPage: 1,
     pageSize: 10,
     totalHits: 0,
-    totalPages: 1
+    totalPages: 1,
+    query: '',
+    version: '',
+    loader: ''
   };
+  let modalSearchSeq = 0;
 
   tabBtnModrinth?.addEventListener('click', () => {
     tabBtnModrinth.className = 'btn btn-sm btn-primary';
@@ -385,12 +390,15 @@ async function openInstallPluginModal(serverId) {
   const performModalSearch = async (targetPage = null) => {
     if (targetPage !== null) {
       modalPagination.currentPage = targetPage;
+    } else {
+      modalPagination.query = searchInput?.value.trim() || '';
+      modalPagination.version = versionSelect?.value || '';
+      modalPagination.loader = loaderSelect?.value || '';
     }
     if (!resultsContainer) return;
 
-    const query = searchInput?.value.trim() || '';
-    const version = versionSelect?.value || '';
-    const loader = loaderSelect?.value || '';
+    const { query, version, loader } = modalPagination;
+    const seq = ++modalSearchSeq;
 
     if (forkBadgeEl) {
       forkBadgeEl.style.display = loader ? 'flex' : 'none';
@@ -414,6 +422,7 @@ async function openInstallPluginModal(serverId) {
         offset: offset
       });
 
+      if (seq !== modalSearchSeq) return;
       const hits = res.hits || [];
       modalPagination.totalHits = res.totalHits || 0;
       modalPagination.totalPages = Math.max(1, Math.ceil(modalPagination.totalHits / modalPagination.pageSize));
@@ -489,19 +498,16 @@ async function openInstallPluginModal(serverId) {
           loadingModal.show(i18n.t('downloadingAndInstalling'), projName, 10);
           try {
             const versions = await api.get(`/api/modrinth/project/${projId}/versions`, { serverId });
-            if (!versions || versions.length === 0) {
+            const candidates = (Array.isArray(versions) ? versions : []).filter(v => (v.compatibility?.matchingLoaders || []).length > 0);
+            const selectedEntry = ['COMPATIBLE_CONFIRMED', 'PARTIAL_COMPATIBILITY', 'NEEDS_ANALYSIS']
+              .map(status => candidates.find(v => v.compatibility.status === status))
+              .find(Boolean);
+            if (!selectedEntry) {
               loadingModal.hide();
               btn.disabled = false;
-              toast.error('No compatible versions found');
+              toast.error(`${projName}: ${i18n.t('noCompatibleVersion')}`);
               return;
             }
-            const selectedEntry = versions.find(v => {
-              const st = v.compatibility?.status;
-              return st === 'COMPATIBLE_CONFIRMED';
-            }) || versions.find(v => {
-              const st = v.compatibility?.status;
-              return st === 'PARTIAL_COMPATIBILITY' || st === 'NEEDS_ANALYSIS';
-            }) || versions[0];
 
             const chosenVer = selectedEntry.version || selectedEntry;
             const files = chosenVer.files || [];
@@ -521,24 +527,10 @@ async function openInstallPluginModal(serverId) {
               projectName: projName
             });
 
-            if (task && task.id) {
-              for (let i = 0; i < 40; i++) {
-                await new Promise(r => setTimeout(r, 600));
-                loadingModal.update(Math.min(30 + i * 2.5, 95), `${i18n.t('downloadingAndInstalling')} - ${projName}...`);
-                try {
-                  const t = await api.get(`/api/tasks/${task.id}`);
-                  if (t.state === 'COMPLETED') {
-                    break;
-                  } else if (t.state === 'FAILED' || t.state === 'CANCELLED') {
-                    throw new Error(t.error || t.message || 'Installation task failed');
-                  }
-                } catch (pe) {
-                  if (pe.message && (pe.message.includes('failed') || pe.message.includes('mismatch'))) {
-                    throw pe;
-                  }
-                }
-              }
-            }
+            if (!task?.id) throw new Error('Install task was not created');
+            await api.waitForTask(task.id, t => {
+              loadingModal.update(Math.min(25 + (t.progress || 0) * 0.7, 95), `${i18n.t('downloadingAndInstalling')} - ${projName}...`);
+            });
 
             loadingModal.update(100, i18n.t('installedSuccess'));
             btn.innerText = i18n.t('installed');
@@ -555,6 +547,7 @@ async function openInstallPluginModal(serverId) {
         });
       });
     } catch (e) {
+      if (seq !== modalSearchSeq) return;
       resultsContainer.innerHTML = `<div style="text-align:center;padding:24px;color:var(--accent-rose);">Error: ${escapeHtml(e.message)}</div>`;
       if (paginationEl) paginationEl.style.display = 'none';
     }
@@ -595,24 +588,18 @@ async function openInstallPluginModal(serverId) {
   });
 
   dropZone?.addEventListener('click', () => fileInput?.click());
-  fileInput?.addEventListener('change', async (e) => {
-    const file = e.target.files[0];
+  dropZone?.addEventListener('dragover', (e) => e.preventDefault());
+  dropZone?.addEventListener('drop', (e) => {
+    e.preventDefault();
+    const file = e.dataTransfer?.files?.[0];
     if (!file) return;
-    const formData = new FormData();
-    formData.append('file', file);
-    loadingModal.show(i18n.t('uploadingAndInstalling'), file.name, -1);
-    try {
-      await api.upload(`/api/servers/${serverId}/plugins/upload`, formData);
-      loadingModal.update(100, i18n.t('installedSuccess'));
-      await new Promise(r => setTimeout(r, 450));
-      loadingModal.hide();
-      toast.success(i18n.t('installedSuccess'));
-      loadPlugins(serverId);
-    } catch (err) {
-      loadingModal.hide();
-      toast.error('Upload failed: ' + err.message);
+    if (!file.name.toLowerCase().endsWith('.jar')) {
+      toast.error(i18n.t('jarFilesOnly'));
+      return;
     }
+    uploadPluginFile(file, serverId);
   });
+  fileInput?.addEventListener('change', (e) => handlePluginUpload(e, serverId));
 
   api.get('/api/modrinth/game-versions').then(versions => {
     if (Array.isArray(versions) && versions.length > 0) {
@@ -629,7 +616,7 @@ async function openInstallPluginModal(serverId) {
       });
       let html = `<option value="">${i18n.t('allVersions')}</option>`;
       if (serverMcVersion && !merged.includes(serverMcVersion)) {
-        html += `<option value="${serverMcVersion}">${serverMcVersion} (${serverForkName || 'Server'})</option>`;
+        html += `<option value="${escapeHtml(serverMcVersion)}">${escapeHtml(serverMcVersion)} (${escapeHtml(serverForkName || 'Server')})</option>`;
       }
       html += merged.map(v => `<option value="${v}">${v}</option>`).join('');
       select.innerHTML = html;
@@ -659,7 +646,11 @@ async function checkPluginUpdates(serverId) {
 }
 
 async function handlePluginUpload(event, serverId) {
-  const file = event.target.files[0];
+  await uploadPluginFile(event.target.files[0], serverId);
+  event.target.value = '';
+}
+
+async function uploadPluginFile(file, serverId) {
   if (!file) return;
 
   const formData = new FormData();

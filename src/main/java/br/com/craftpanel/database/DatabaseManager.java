@@ -45,6 +45,7 @@ public class DatabaseManager {
                 stmt.execute("PRAGMA journal_mode = WAL;");
             }
             applySchema(conn);
+            removeSessionTokensFromAudit(conn);
             seedDefaultRoles(conn);
         } catch (SQLException e) {
             LOGGER.error("Failed to initialize database", e);
@@ -189,6 +190,14 @@ public class DatabaseManager {
             stmt.execute("CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);");
             stmt.execute("CREATE INDEX IF NOT EXISTS idx_audit_created_at ON audit_logs(created_at);");
             stmt.execute("CREATE INDEX IF NOT EXISTS idx_user_server_perms ON user_server_permissions(user_id, server_id);");
+        }
+    }
+
+    // Older versions stored the raw session token as target_id of login/logout entries, readable with audit.view.
+    private void removeSessionTokensFromAudit(Connection conn) throws SQLException {
+        try (Statement stmt = conn.createStatement()) {
+            stmt.executeUpdate("UPDATE audit_logs SET target_type = 'USER', target_id = user_id "
+                    + "WHERE action IN ('AUTH_LOGIN', 'AUTH_LOGOUT') AND target_type = 'SESSION'");
         }
     }
 

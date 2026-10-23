@@ -50,7 +50,7 @@ public class AuthController {
             cookie.setSameSite(SameSite.LAX);
             ctx.cookie(cookie);
 
-            auditService.log(session.userId(), username, "AUTH_LOGIN", "SESSION", session.token(), "Login successful", ctx.ip(), "SUCCESS");
+            auditService.log(session.userId(), session.username(), "AUTH_LOGIN", "USER", session.userId(), "Login successful", ctx.ip(), "SUCCESS");
 
             ctx.json(Map.of(
                     "success", true,
@@ -70,7 +70,7 @@ public class AuthController {
         Session session = ctx.attribute("session");
         if (session != null) {
             authService.logout(session.token());
-            auditService.log(session.userId(), session.username(), "AUTH_LOGOUT", "SESSION", session.token(), "User logged out", ctx.ip(), "SUCCESS");
+            auditService.log(session.userId(), session.username(), "AUTH_LOGOUT", "USER", session.userId(), "User logged out", ctx.ip(), "SUCCESS");
         }
 
         Cookie cookie = new Cookie("craftpanel_session", "");
@@ -105,7 +105,8 @@ public class AuthController {
         }
 
         try {
-            authService.changePassword(user.id(), oldPass, newPass);
+            Session session = ctx.attribute("session");
+            authService.changePassword(user.id(), oldPass, newPass, session != null ? session.token() : null);
             auditService.log(user.id(), user.username(), "PASSWORD_CHANGE", "USER", user.id(), "Password changed successfully", ctx.ip(), "SUCCESS");
             ctx.json(Map.of("success", true));
         } catch (SecurityException e) {
@@ -117,7 +118,8 @@ public class AuthController {
 
     public void createWsTicket(Context ctx) {
         User user = AuthMiddleware.requireUser(ctx);
-        String ticket = authService.createWebSocketTicket(user.id());
+        Session session = ctx.attribute("session");
+        String ticket = authService.createWebSocketTicket(user.id(), session != null ? session.token() : null);
         ctx.json(Map.of("ticket", ticket));
     }
 }

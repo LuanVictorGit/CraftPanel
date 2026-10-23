@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -15,10 +16,14 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class ServerRepository {
     private static final Logger LOGGER = LoggerFactory.getLogger(ServerRepository.class);
     public static final String HOST_SERVER_ID = "local";
+    private static final Pattern MC_VERSION_TAG = Pattern.compile("\\(MC: ([^)]+)\\)");
+    private static final Pattern NUMERIC_VERSION = Pattern.compile("\\d+(?:\\.\\d+)*");
 
     private final DatabaseManager db;
 
@@ -40,8 +45,9 @@ public class ServerRepository {
                 String serverName = (String) bukkitClass.getMethod("getName").invoke(null);
                 String serverVer = (String) bukkitClass.getMethod("getVersion").invoke(null);
                 String rawBukkitVer = (String) bukkitClass.getMethod("getBukkitVersion").invoke(null);
-                if (rawBukkitVer != null) {
-                    version = rawBukkitVer.contains("-") ? rawBukkitVer.split("-")[0].trim() : rawBukkitVer.trim();
+                String detectedVer = detectMinecraftVersion(bukkitClass, serverVer, rawBukkitVer);
+                if (detectedVer != null) {
+                    version = detectedVer;
                 }
 
                 boolean isFolia = false;
@@ -114,7 +120,9 @@ public class ServerRepository {
             }
         }
 
-        String serverDir = new File(".").getAbsolutePath();
+        // Always the live working directory: a server folder copied from another machine keeps
+        // the old absolute path in its database, which would point plugins/files/backups nowhere.
+        String serverDir = Paths.get("").toAbsolutePath().normalize().toString();
         String jarPath = "./server.jar";
         File dir = new File(".");
         File[] jars = dir.listFiles((d, f) -> f.endsWith(".jar") && !f.equalsIgnoreCase("craftpanel.jar"));
@@ -132,6 +140,15 @@ public class ServerRepository {
                 del.executeUpdate();
             }
 
+            try (PreparedStatement sel = conn.prepareStatement("SELECT server_dir FROM servers WHERE id = ?")) {
+                sel.setString(1, HOST_SERVER_ID);
+                try (ResultSet rs = sel.executeQuery()) {
+                    if (rs.next() && !serverDir.equals(rs.getString("server_dir"))) {
+                        LOGGER.info("Host server directory updated from {} to {}", rs.getString("server_dir"), serverDir);
+                    }
+                }
+            }
+
             String sql = """
                 INSERT INTO servers (id, name, description, software, minecraft_version, jar_path, server_dir, java_executable, min_memory_mb, max_memory_mb, server_port, jvm_args, auto_start, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
@@ -139,6 +156,7 @@ public class ServerRepository {
                     name = excluded.name,
                     software = excluded.software,
                     minecraft_version = excluded.minecraft_version,
+                    server_dir = excluded.server_dir,
                     server_port = excluded.server_port,
                     updated_at = excluded.updated_at;
             """;
@@ -162,6 +180,31 @@ public class ServerRepository {
         } catch (SQLException e) {
             LOGGER.error("Failed to ensure single host server", e);
         }
+    }
+
+    // Paper 26.x reports getBukkitVersion() as "26.2.build.134-alpha", which matches no Modrinth game version.
+    static String detectMinecraftVersion(Class<?> bukkitClass, String serverVer, String rawBukkitVer) {
+        try {
+            Object mcVer = bukkitClass.getMethod("getMinecraftVersion").invoke(null);
+            if (mcVer instanceof String s && !s.isBlank()) {
+                return s.trim();
+            }
+        } catch (Throwable ignored) {}
+
+        if (serverVer != null) {
+            Matcher m = MC_VERSION_TAG.matcher(serverVer);
+            if (m.find()) {
+                return m.group(1).trim();
+            }
+        }
+
+        if (rawBukkitVer != null) {
+            Matcher m = NUMERIC_VERSION.matcher(rawBukkitVer.trim());
+            if (m.lookingAt()) {
+                return m.group();
+            }
+        }
+        return null;
     }
 
     public List<MinecraftServer> findAll() {

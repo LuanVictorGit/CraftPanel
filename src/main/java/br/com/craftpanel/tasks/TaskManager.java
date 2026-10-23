@@ -4,6 +4,7 @@ import br.com.craftpanel.database.DatabaseManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.file.FileSystemException;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -34,11 +35,38 @@ public class TaskManager {
 
     public TaskManager(DatabaseManager db) {
         this.db = db;
+        failInterruptedTasks();
         this.executor = Executors.newFixedThreadPool(4, r -> {
             Thread t = new Thread(r, "craftpanel-task");
             t.setDaemon(true);
             return t;
         });
+    }
+
+    /** Stops the workers: queued tasks are dropped and running ones interrupted; leftovers are failed on the next start. */
+    public void shutdown() {
+        executor.shutdownNow();
+    }
+
+    // Tasks still QUEUED/RUNNING in the database were cut off by a stop or reload and would otherwise show forever.
+    private void failInterruptedTasks() {
+        String reason = "Interrompida por reinício do servidor";
+        String sql = "UPDATE tasks SET state = ?, message = ?, error = ?, completed_at = ? WHERE state IN (?, ?)";
+        try (Connection conn = db.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, Task.State.FAILED.name());
+            stmt.setString(2, reason);
+            stmt.setString(3, reason);
+            stmt.setString(4, Instant.now().toString());
+            stmt.setString(5, Task.State.QUEUED.name());
+            stmt.setString(6, Task.State.RUNNING.name());
+            int updated = stmt.executeUpdate();
+            if (updated > 0) {
+                LOGGER.warn("Marked {} interrupted task(s) as failed", updated);
+            }
+        } catch (SQLException e) {
+            LOGGER.error("Error marking interrupted tasks as failed", e);
+        }
     }
 
     public void addListener(TaskListener listener) {
@@ -65,9 +93,13 @@ public class TaskManager {
                         msg -> updateTask(id, Task.State.RUNNING, -1, msg, null)
                 );
                 updateTask(id, Task.State.COMPLETED, 100, "Concluído com sucesso", null);
-            } catch (Exception e) {
+            } catch (Throwable e) {
                 LOGGER.error("Task {} failed", id, e);
-                updateTask(id, Task.State.FAILED, -1, "Falha na execução: " + e.getMessage(), e.getMessage());
+                // FileSystemException messages are just a path ("C:\Users\..."), so keep the exception type.
+                String reason = e.getMessage() == null || e instanceof FileSystemException
+                        ? e.getClass().getSimpleName() + (e.getMessage() != null ? ": " + e.getMessage() : "")
+                        : e.getMessage();
+                updateTask(id, Task.State.FAILED, -1, "Falha na execução: " + reason, reason);
             }
         });
 

@@ -79,7 +79,23 @@ public class BackupController {
         MinecraftServer server = serverService.getServer(serverId).orElseThrow(() -> new NotFoundResponse("Server not found"));
 
         ServerProcess proc = processManager.getProcess(serverId);
-        if (proc != null && (proc.getState() == ProcessState.RUNNING || proc.getState() == ProcessState.STARTING)) {
+        if (proc == null || proc.isHostInstance()) {
+            // CraftPanel runs inside this server: stage the restore and apply it on the next start, before worlds load.
+            try {
+                backupService.scheduleRestore(server, backupId, user.username());
+            } catch (Exception e) {
+                ctx.status(400).json(Map.of("error", e.getMessage()));
+                return;
+            }
+            auditService.log(user.id(), user.username(), "BACKUP_RESTORE", "BACKUP", backupId, "Scheduled restore on next start of " + server.name(), ctx.ip(), "SUCCESS");
+            if (proc != null) {
+                proc.stop(20);
+            }
+            ctx.status(202).json(Map.of("scheduled", true));
+            return;
+        }
+
+        if (proc.getState() == ProcessState.RUNNING || proc.getState() == ProcessState.STARTING) {
             proc.stop(20);
         }
 

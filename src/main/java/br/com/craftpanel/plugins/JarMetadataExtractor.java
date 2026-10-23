@@ -29,10 +29,9 @@ public class JarMetadataExtractor {
         List<String> softDependencies = Collections.emptyList();
 
         try (JarFile jar = new JarFile(jarFile)) {
+            // paper-plugin.yml alone does not mean Folia support; both formats declare it via folia-supported.
             JarEntry entry = jar.getJarEntry("paper-plugin.yml");
-            if (entry != null) {
-                foliaSupported = true;
-            } else {
+            if (entry == null) {
                 entry = jar.getJarEntry("plugin.yml");
             }
 

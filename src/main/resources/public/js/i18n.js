@@ -45,7 +45,6 @@ const translations = {
     searchingModrinth: "Searching Modrinth...",
     noPluginsFound: "No plugins found for this search.",
     downloading: "Downloading...",
-    installing: "Installing...",
     pleaseWait: "Please wait...",
     loadingProjectInfo: "Loading project information...",
     uploading: "Uploading...",
@@ -111,6 +110,7 @@ const translations = {
     sendCommand: "Send",
 
     // Files
+    file: "File",
     uploadFile: "Upload File",
     newFile: "New File",
     newFolder: "New Folder",
@@ -146,7 +146,8 @@ const translations = {
     restoreBackup: "Restore",
     downloadBackup: "Download",
     deleteBackup: "Delete",
-    confirmRestore: "Are you sure you want to restore this backup? The server will be stopped and files restored.",
+    confirmRestore: "Are you sure you want to restore this backup? The server will be stopped and the backup applied when it starts again (worlds and configs; plugin jars are kept).",
+    restoreScheduled: "Restore scheduled. The server is stopping and the backup will be applied on its next start.",
 
     // Monitoring & Telemetry
     systemHostMetrics: "Host System Metrics",
@@ -221,6 +222,8 @@ const translations = {
     deletePluginConfigDesc: "Removes the plugin directory under plugins/ containing config.yml and saved data.",
     deletingPlugin: "Unloading & Deleting Plugin",
     pluginDeletedSuccess: "Plugin unloaded and deleted successfully!",
+    noCompatibleVersion: "No version of this plugin supports your server platform.",
+    jarFilesOnly: "Only .jar plugin files are supported.",
 
     // Server Lifecycle
     serverStoppingTitle: "Stopping Server...",
@@ -351,7 +354,6 @@ const translations = {
     searchingModrinth: "Pesquisando no Modrinth...",
     noPluginsFound: "Nenhum plugin encontrado para esta pesquisa.",
     downloading: "Baixando...",
-    installing: "Instalando...",
     pleaseWait: "Por favor, aguarde...",
     loadingProjectInfo: "Carregando informações do projeto...",
     uploading: "Enviando arquivo...",
@@ -417,6 +419,7 @@ const translations = {
     sendCommand: "Enviar",
 
     // Files
+    file: "Arquivo",
     uploadFile: "Enviar Arquivo",
     newFile: "Novo Arquivo",
     newFolder: "Nova Pasta",
@@ -452,7 +455,8 @@ const translations = {
     restoreBackup: "Restaurar",
     downloadBackup: "Baixar",
     deleteBackup: "Excluir",
-    confirmRestore: "Tem certeza de que deseja restaurar este backup? O servidor será interrompido e os arquivos substituídos.",
+    confirmRestore: "Tem certeza de que deseja restaurar este backup? O servidor será desligado e o backup aplicado na próxima inicialização (mundos e configurações; os .jar dos plugins são mantidos).",
+    restoreScheduled: "Restauração agendada. O servidor está desligando e o backup será aplicado na próxima inicialização.",
 
     // Monitoring & Telemetry
     systemHostMetrics: "Métricas do Sistema Hospedeiro",
@@ -527,6 +531,8 @@ const translations = {
     deletePluginConfigDesc: "Remove a pasta do plugin dentro de plugins/ contendo o config.yml e dados salvos.",
     deletingPlugin: "Descarregando e Excluindo Plugin",
     pluginDeletedSuccess: "Plugin descarregado e excluído com sucesso!",
+    noCompatibleVersion: "Nenhuma versão deste plugin é compatível com a plataforma do seu servidor.",
+    jarFilesOnly: "Apenas arquivos .jar de plugin são suportados.",
 
     // Server Lifecycle
     serverStoppingTitle: "Parando o Servidor...",
@@ -624,7 +630,6 @@ export const i18n = {
       currentLang = lang;
       localStorage.setItem('craftpanel_lang', lang);
       window.dispatchEvent(new CustomEvent('language:changed', { detail: lang }));
-      window.dispatchEvent(new CustomEvent('languagechange', { detail: lang }));
     }
   },
 

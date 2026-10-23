@@ -110,11 +110,11 @@ function renderBackupsTable(serverId, backups) {
       modal.confirm(i18n.t('restoreBackup'), i18n.t('confirmRestore'), async () => {
         loadingModal.show(i18n.t('restoreBackup'), i18n.t('pleaseWait'), -1);
         try {
-          await api.post(`/api/servers/${serverId}/backups/${id}/restore`);
+          const res = await api.post(`/api/servers/${serverId}/backups/${id}/restore`);
           loadingModal.update(100, i18n.t('operationSuccess'));
           await new Promise(r => setTimeout(r, 400));
           loadingModal.hide();
-          toast.success(i18n.t('operationSuccess'));
+          toast.success(res?.scheduled ? i18n.t('restoreScheduled') : i18n.t('operationSuccess'));
         } catch (e) {
           loadingModal.hide();
           toast.error(e.message);

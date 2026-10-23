@@ -73,6 +73,7 @@ public class UserService {
         userRepo.findById(id).orElseThrow(() -> new IllegalArgumentException("User not found"));
         String hash = PasswordHasher.hash(newPassword);
         userRepo.updatePassword(id, hash);
+        userRepo.deleteSessionsForUser(id, null);
     }
 
     public void deleteUser(String id) {

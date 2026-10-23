@@ -30,7 +30,7 @@ export const api = {
     }
 
     if (!response.ok) {
-      const errorMsg = (data && data.error) ? data.error : (typeof data === 'string' && data ? data : `Erro ${response.status}`);
+      const errorMsg = data?.error || data?.title || (typeof data === 'string' && data ? data : `Erro ${response.status}`);
       throw new Error(errorMsg);
     }
 
@@ -77,5 +77,27 @@ export const api = {
 
   upload(endpoint, formData) {
     return this.request('POST', endpoint, formData, true);
+  },
+
+  async waitForTask(taskId, onProgress = null) {
+    const deadline = Date.now() + 5 * 60 * 1000;
+    let failures = 0;
+    while (Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 600));
+      let task;
+      try {
+        task = await this.get(`/api/tasks/${taskId}`);
+        failures = 0;
+      } catch (e) {
+        if (++failures > 5) throw e;
+        continue;
+      }
+      if (onProgress) onProgress(task);
+      if (task.state === 'COMPLETED') return task;
+      if (task.state === 'FAILED' || task.state === 'CANCELLED') {
+        throw new Error(task.error || task.message || 'Task failed');
+      }
+    }
+    throw new Error('Timed out waiting for the task to finish');
   }
 };

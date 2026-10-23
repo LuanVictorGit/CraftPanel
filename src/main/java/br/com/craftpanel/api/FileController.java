@@ -62,8 +62,8 @@ public class FileController {
         }
 
         try {
-            String content = fileManager.readFile(server, path);
-            ctx.json(Map.of("path", path, "content", content));
+            FileManager.TextContent text = fileManager.readTextFile(server, path);
+            ctx.json(Map.of("path", path, "content", text.content(), "charset", text.charset()));
         } catch (SecurityException e) {
             ctx.status(403).json(Map.of("error", e.getMessage()));
         } catch (Exception e) {
@@ -80,6 +80,7 @@ public class FileController {
         JsonNode body = ctx.bodyAsClass(JsonNode.class);
         String path = body.path("path").asText(null);
         String content = body.path("content").asText("");
+        String charset = body.path("charset").asText(null);
 
         if (path == null || path.isBlank()) {
             ctx.status(400).json(Map.of("error", "Path is required"));
@@ -87,7 +88,7 @@ public class FileController {
         }
 
         try {
-            fileManager.writeFile(server, path, content);
+            fileManager.writeFile(server, path, content, charset);
             auditService.log(user.id(), user.username(), "FILE_WRITE", "FILE", path, "Edited file on server " + server.name(), ctx.ip(), "SUCCESS");
             if (eventsWs != null) {
                 eventsWs.broadcast("file_change", Map.of(
@@ -96,7 +97,7 @@ public class FileController {
                         "path", path,
                         "content", content,
                         "user", user.username()
-                ));
+                ), serverId, Permission.FILES_VIEW);
             }
             ctx.json(Map.of("success", true));
         } catch (SecurityException e) {
@@ -126,7 +127,7 @@ public class FileController {
                         "serverId", serverId,
                         "action", "create_dir",
                         "path", path
-                ));
+                ), serverId, Permission.FILES_VIEW);
             }
             ctx.json(Map.of("success", true));
         } catch (Exception e) {
@@ -154,7 +155,7 @@ public class FileController {
                         "serverId", serverId,
                         "action", "create",
                         "path", path
-                ));
+                ), serverId, Permission.FILES_VIEW);
             }
             ctx.json(Map.of("success", true));
         } catch (Exception e) {
@@ -184,7 +185,7 @@ public class FileController {
                         "action", "rename",
                         "path", path,
                         "newName", newName
-                ));
+                ), serverId, Permission.FILES_VIEW);
             }
             ctx.json(Map.of("success", true));
         } catch (Exception e) {
@@ -214,7 +215,7 @@ public class FileController {
                         "action", "move",
                         "source", source,
                         "targetDir", targetDir
-                ));
+                ), serverId, Permission.FILES_VIEW);
             }
             ctx.json(Map.of("success", true));
         } catch (Exception e) {
@@ -251,7 +252,7 @@ public class FileController {
                         "action", "delete",
                         "path", path,
                         "user", user.username()
-                ));
+                ), serverId, Permission.FILES_VIEW);
             }
             ctx.json(Map.of("success", true));
         } catch (SecurityException e) {
@@ -302,7 +303,7 @@ public class FileController {
                         "action", "upload",
                         "targetDir", targetDir != null ? targetDir : "",
                         "filename", uploaded.filename()
-                ));
+                ), serverId, Permission.FILES_VIEW);
             }
             ctx.json(Map.of("success", true, "filename", uploaded.filename()));
         } catch (Exception e) {

@@ -47,10 +47,14 @@ public class ProcessManager {
     }
 
     public void shutdownAll() {
-        LOGGER.info("Gracefully stopping host server process...");
         for (ServerProcess proc : processes.values()) {
             try {
-                proc.stop(10);
+                // The host is the server CraftPanel runs in: a panel reload or disable must not stop it.
+                if (proc.isHostInstance()) {
+                    proc.detach();
+                } else {
+                    proc.stop(10);
+                }
             } catch (Exception e) {
                 LOGGER.warn("Failed to gracefully stop server {}", proc.getServer().name(), e);
             }

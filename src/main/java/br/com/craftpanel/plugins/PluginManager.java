@@ -101,9 +101,28 @@ public class PluginManager {
         return result;
     }
 
+    /** Bare file name of an uploaded or downloaded plugin jar; rejects anything that is not a plain .jar name. */
+    public static String sanitizeJarName(String filename) {
+        String name = filename == null ? "" : filename.substring(Math.max(filename.lastIndexOf('/'), filename.lastIndexOf('\\')) + 1).trim();
+        if (name.length() <= 4 || !name.toLowerCase().endsWith(".jar") || name.matches(".*[<>:\"|?*\\x00-\\x1F].*")) {
+            throw new IllegalArgumentException("Only .jar plugin files can be installed");
+        }
+        return name;
+    }
+
+    // Request file names must name a jar directly inside the plugins folder, never "../server.properties".
+    private File resolvePluginFile(MinecraftServer server, String filename) {
+        String lower = filename == null ? "" : filename.toLowerCase();
+        boolean plainName = filename != null && !filename.isBlank() && !filename.matches(".*[/\\\\:\\x00-\\x1F].*");
+        if (!plainName || !(lower.endsWith(".jar") || lower.endsWith(".jar.disabled"))) {
+            throw new IllegalArgumentException("Invalid plugin file name: " + filename);
+        }
+        return new File(getPluginsDir(server), filename);
+    }
+
     public void togglePlugin(MinecraftServer server, String filename) throws IOException {
         File pluginsDir = getPluginsDir(server);
-        File file = new File(pluginsDir, filename);
+        File file = resolvePluginFile(server, filename);
 
         if (!file.exists()) {
             throw new IllegalArgumentException("Plugin file not found: " + filename);
@@ -124,8 +143,7 @@ public class PluginManager {
     }
 
     public boolean loadPlugin(MinecraftServer server, String filename) {
-        File pluginsDir = getPluginsDir(server);
-        File file = new File(pluginsDir, filename);
+        File file = resolvePluginFile(server, filename);
         if (!file.exists()) {
             return false;
         }
@@ -141,8 +159,7 @@ public class PluginManager {
             throw new IllegalArgumentException("CraftPanel is the core system plugin and cannot be deleted.");
         }
 
-        File pluginsDir = getPluginsDir(server);
-        File file = new File(pluginsDir, filename);
+        File file = resolvePluginFile(server, filename);
 
         if (!file.exists()) {
             return;
@@ -156,12 +173,11 @@ public class PluginManager {
 
         unloadPluginAtRuntime(pluginName);
 
-        Path backupDir = Paths.get(config.storage().backupDirectory(), "plugins", server.id());
-        Files.createDirectories(backupDir);
-        Path backupFile = backupDir.resolve(filename + "." + System.currentTimeMillis() + ".bak");
         try {
-            Files.copy(file.toPath(), backupFile, StandardCopyOption.REPLACE_EXISTING);
-        } catch (Throwable ignored) {}
+            backupPluginFile(server, file.toPath());
+        } catch (Throwable t) {
+            LOGGER.warn("Could not back up {} before deleting it: {}", filename, t.toString());
+        }
 
         boolean deleted = false;
         for (int i = 0; i < 5; i++) {
@@ -199,6 +215,15 @@ public class PluginManager {
         }
         File pluginsDir = getPluginsDir(server);
         File configDir = new File(pluginsDir, pluginName);
+        // The name comes from the jar's plugin.yml: "name: .." would otherwise wipe the whole server folder.
+        try {
+            if (!configDir.getCanonicalFile().getParentFile().equals(pluginsDir.getCanonicalFile())) {
+                LOGGER.warn("Refusing to delete config folder outside plugins/: {}", pluginName);
+                return;
+            }
+        } catch (IOException e) {
+            return;
+        }
         if (configDir.exists() && configDir.isDirectory()) {
             deleteDirectoryRecursively(configDir);
         }
@@ -219,23 +244,23 @@ public class PluginManager {
     }
 
     public InstalledPlugin installPlugin(MinecraftServer server, String filename, InputStream in) throws IOException {
-        File pluginsDir = getPluginsDir(server);
-        if (!pluginsDir.exists()) {
-            pluginsDir.mkdirs();
+        Path pluginsDir = getPluginsDir(server).toPath();
+        Files.createDirectories(pluginsDir);
+
+        String safeName = sanitizeJarName(filename);
+        Path target = pluginsDir.resolve(safeName);
+        Path staged = pluginsDir.resolve(safeName + ".part");
+        try {
+            try (in) {
+                Files.copy(in, staged, StandardCopyOption.REPLACE_EXISTING);
+            }
+            replacePluginJar(server, staged, target);
+        } finally {
+            Files.deleteIfExists(staged);
         }
 
-        String safeName = Paths.get(filename).getFileName().toString();
-        if (!safeName.toLowerCase().endsWith(".jar")) {
-            safeName += ".jar";
-        }
-
-        File target = new File(pluginsDir, safeName);
-        try (in) {
-            Files.copy(in, target.toPath(), StandardCopyOption.REPLACE_EXISTING);
-        }
-
-        loadPluginAtRuntime(target);
-        return JarMetadataExtractor.extract(target);
+        loadPluginAtRuntime(target.toFile());
+        return JarMetadataExtractor.extract(target.toFile());
     }
 
     public boolean loadPluginAtRuntime(File file) {
@@ -463,6 +488,8 @@ public class PluginManager {
                 lookupNames.remove(name.toLowerCase());
             } catch (Throwable ignored) {}
 
+            unregisterFromPaper(target);
+
             try {
                 Object serverObj = bukkitClass.getMethod("getServer").invoke(null);
                 Method getCommandMap = serverObj.getClass().getMethod("getCommandMap");
@@ -537,6 +564,41 @@ public class PluginManager {
             syncServerCommands();
         } catch (Throwable t) {
             LOGGER.error("Error during internal unload of " + name, t);
+        }
+    }
+
+    // Paper keeps its own plugin registry (PaperPluginInstanceManager). Leaving the old instance there makes Paper
+    // refuse the new jar as a duplicate, and the failed load keeps that jar locked on Windows.
+    private void unregisterFromPaper(Object target) {
+        try {
+            Class<?> managerClass = Class.forName("io.papermc.paper.plugin.manager.PaperPluginManagerImpl");
+            Object manager = managerClass.getMethod("getInstance").invoke(null);
+            Field instanceField = managerClass.getDeclaredField("instanceManager");
+            instanceField.setAccessible(true);
+            Object instanceManager = instanceField.get(manager);
+
+            Field pluginsField = instanceManager.getClass().getDeclaredField("plugins");
+            pluginsField.setAccessible(true);
+            ((List<?>) pluginsField.get(instanceManager)).remove(target);
+
+            Field namesField = instanceManager.getClass().getDeclaredField("lookupNames");
+            namesField.setAccessible(true);
+            ((Map<?, ?>) namesField.get(instanceManager)).values().removeIf(p -> p == target);
+
+            Field treeField = instanceManager.getClass().getDeclaredField("dependencyTree");
+            treeField.setAccessible(true);
+            Object tree = treeField.get(instanceManager);
+            Object meta = target.getClass().getMethod("getPluginMeta").invoke(target);
+            for (Method m : tree.getClass().getMethods()) {
+                if (m.getName().equals("remove") && m.getParameterCount() == 1 && m.getParameterTypes()[0].isInstance(meta)) {
+                    m.invoke(tree, meta);
+                    break;
+                }
+            }
+        } catch (ClassNotFoundException notPaper) {
+            // Spigot/CraftBukkit: the SimplePluginManager fields cleared above are the only registry.
+        } catch (Throwable t) {
+            LOGGER.warn("Could not fully unregister plugin from Paper's plugin manager: {}", t.toString());
         }
     }
 
@@ -770,6 +832,101 @@ public class PluginManager {
     }
 
     public File getPluginsDir(MinecraftServer server) {
+        // Inside Bukkit, the folder holding CraftPanel.jar is the real plugins directory (honours --plugins).
+        try {
+            CraftPanelPlugin plugin = CraftPanelPlugin.getInstance();
+            if (plugin != null && plugin.getDataFolder().getParentFile() != null) {
+                return plugin.getDataFolder().getAbsoluteFile().getParentFile();
+            }
+        } catch (Throwable ignored) {}
         return new File(server.serverDir(), "plugins");
+    }
+
+    public Path backupPluginFile(MinecraftServer server, Path file) throws IOException {
+        Path backupDir = Paths.get(config.storage().backupDirectory(), "plugins", server.id());
+        Files.createDirectories(backupDir);
+        Path backupFile = backupDir.resolve(file.getFileName().toString() + "." + System.currentTimeMillis() + ".bak");
+        Files.copy(file, backupFile, StandardCopyOption.REPLACE_EXISTING);
+        return backupFile;
+    }
+
+    /**
+     * Moves a downloaded jar into place as {@code target}. Every other jar declaring the same plugin name is
+     * backed up and removed (Bukkit refuses to boot two jars with one name), and the running copy is unloaded
+     * first because Windows keeps a loaded jar locked. Returns the file names that were removed.
+     */
+    public List<String> replacePluginJar(MinecraftServer server, Path stagedJar, Path target) throws IOException {
+        String pluginName = JarMetadataExtractor.extract(stagedJar.toFile()).name();
+        boolean touchesSelf = "craftpanel".equalsIgnoreCase(pluginName)
+                || (Files.exists(target) && "craftpanel".equalsIgnoreCase(JarMetadataExtractor.extract(target.toFile()).name()));
+        if (touchesSelf) {
+            throw new IllegalArgumentException("CraftPanel cannot replace itself while running.");
+        }
+
+        unloadPluginAtRuntime(pluginName);
+
+        List<String> removed = new ArrayList<>();
+        File[] jars = target.getParent().toFile().listFiles((dir, name) -> name.toLowerCase().endsWith(".jar"));
+        if (jars != null) {
+            for (File jar : jars) {
+                Path jarPath = jar.toPath();
+                boolean isTarget = jarPath.equals(target);
+                if (!isTarget && !pluginName.equalsIgnoreCase(JarMetadataExtractor.extract(jar).name())) {
+                    continue;
+                }
+                backupPluginFile(server, jarPath);
+                if (!isTarget) {
+                    retryIo(() -> Files.deleteIfExists(jarPath));
+                    removed.add(jar.getName());
+                }
+            }
+        }
+
+        try {
+            retryIo(() -> Files.move(stagedJar, target, StandardCopyOption.REPLACE_EXISTING));
+        } catch (IOException locked) {
+            // Still held open by the server: hand it to Bukkit's update folder, applied before plugins load on restart.
+            Path updateDir = getUpdateFolder(target.getParent());
+            Files.createDirectories(updateDir);
+            Files.move(stagedJar, updateDir.resolve(target.getFileName()), StandardCopyOption.REPLACE_EXISTING);
+            throw new IOException("O arquivo " + target.getFileName() + " está em uso pelo servidor. A nova versão foi salva em "
+                    + target.getParent().relativize(updateDir) + "/ e será aplicada na próxima reinicialização.", locked);
+        }
+        return removed;
+    }
+
+    private Path getUpdateFolder(Path pluginsDir) {
+        try {
+            Object folder = Class.forName("org.bukkit.Bukkit").getMethod("getUpdateFolderFile").invoke(null);
+            if (folder instanceof File file) {
+                return file.getAbsoluteFile().toPath();
+            }
+        } catch (Throwable ignored) {}
+        return pluginsDir.resolve("update");
+    }
+
+    private interface IoAction {
+        void run() throws IOException;
+    }
+
+    // A jar released by an unloaded class loader can stay locked on Windows until the next GC.
+    private static void retryIo(IoAction action) throws IOException {
+        IOException last = null;
+        for (int i = 0; i < 5; i++) {
+            try {
+                action.run();
+                return;
+            } catch (IOException e) {
+                last = e;
+                System.gc();
+                try {
+                    Thread.sleep(150);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+        }
+        throw last;
     }
 }

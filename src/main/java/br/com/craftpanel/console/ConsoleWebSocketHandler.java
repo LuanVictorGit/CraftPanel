@@ -37,7 +37,9 @@ public class ConsoleWebSocketHandler {
 
     private final Map<WsContext, ClientContext> clients = new ConcurrentHashMap<>();
 
-    private record ClientContext(User user, String serverId, ServerProcess.Listener listener) {}
+    private record ClientContext(String userId, String sessionToken, String serverId, ServerProcess.Listener listener) {}
+
+    private record Authenticated(User user, String sessionToken) {}
 
     public ConsoleWebSocketHandler(
             AuthService authService,
@@ -55,13 +57,14 @@ public class ConsoleWebSocketHandler {
         ws.onConnect(ctx -> {
             String rawServerId = ctx.pathParam("serverId");
             String serverId = (rawServerId == null || rawServerId.isBlank() || "undefined".equalsIgnoreCase(rawServerId) || "null".equalsIgnoreCase(rawServerId)) ? "local" : rawServerId;
-            User user = authenticate(ctx);
+            Authenticated auth = authenticate(ctx);
 
-            if (user == null) {
+            if (auth == null) {
                 ctx.send(MAPPER.writeValueAsString(Map.of("type", "error", "message", "Unauthorized")));
                 ctx.closeSession();
                 return;
             }
+            User user = auth.user();
 
             if (!userService.hasServerPermission(user, serverId, Permission.CONSOLE_VIEW)) {
                 ctx.send(MAPPER.writeValueAsString(Map.of("type", "error", "message", "Permission denied: console.view")));
@@ -113,7 +116,7 @@ public class ConsoleWebSocketHandler {
             };
 
             proc.addListener(listener);
-            clients.put(ctx, new ClientContext(user, serverId, listener));
+            clients.put(ctx, new ClientContext(user.id(), auth.sessionToken(), serverId, listener));
 
             List<ConsoleLine> backlog = proc.getBuffer().getLines();
             ctx.send(MAPPER.writeValueAsString(Map.of(
@@ -126,6 +129,14 @@ public class ConsoleWebSocketHandler {
         ws.onMessage(ctx -> {
             ClientContext client = clients.get(ctx);
             if (client == null) return;
+
+            // Logout, password changes, deleted accounts and role changes must apply to an already open console.
+            User user = currentUser(client);
+            if (user == null || !userService.hasServerPermission(user, client.serverId(), Permission.CONSOLE_VIEW)) {
+                ctx.send(MAPPER.writeValueAsString(Map.of("type", "error", "message", "Session expired or access revoked")));
+                ctx.closeSession();
+                return;
+            }
 
             String msg = ctx.message();
             String command = msg;
@@ -150,7 +161,7 @@ public class ConsoleWebSocketHandler {
                 }
             } catch (Exception ignored) {}
 
-            if (!userService.hasServerPermission(client.user(), client.serverId(), Permission.CONSOLE_EXECUTE)) {
+            if (!userService.hasServerPermission(user, client.serverId(), Permission.CONSOLE_EXECUTE)) {
                 ctx.send(MAPPER.writeValueAsString(Map.of("type", "error", "message", "Permission denied: console.execute")));
                 return;
             }
@@ -333,12 +344,23 @@ public class ConsoleWebSocketHandler {
         return Map.of();
     }
 
-    private User authenticate(WsContext ctx) {
+    private User currentUser(ClientContext client) {
+        if (client.sessionToken() == null) {
+            return null;
+        }
+        return authService.validateSession(client.sessionToken())
+                .filter(session -> session.userId().equals(client.userId()))
+                .flatMap(session -> userService.getUser(session.userId()))
+                .orElse(null);
+    }
+
+    private Authenticated authenticate(WsContext ctx) {
         String ticket = ctx.queryParam("ticket");
         if (ticket != null && !ticket.isBlank()) {
-            Optional<String> userId = authService.validateWebSocketTicket(ticket);
-            if (userId.isPresent()) {
-                return userService.getUser(userId.get()).orElse(null);
+            Optional<Session> session = authService.redeemWebSocketTicket(ticket);
+            if (session.isPresent()) {
+                String token = session.get().token();
+                return userService.getUser(session.get().userId()).map(user -> new Authenticated(user, token)).orElse(null);
             }
         }
 
@@ -346,7 +368,7 @@ public class ConsoleWebSocketHandler {
         if (cookieToken != null && !cookieToken.isBlank()) {
             Optional<Session> session = authService.validateSession(cookieToken);
             if (session.isPresent()) {
-                return userService.getUser(session.get().userId()).orElse(null);
+                return userService.getUser(session.get().userId()).map(user -> new Authenticated(user, cookieToken)).orElse(null);
             }
         }
 

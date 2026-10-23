@@ -1,5 +1,5 @@
 import { api } from './api.js';
-import { toast, modal, formatUptime } from './ui.js';
+import { toast, modal, loadingModal, formatUptime } from './ui.js';
 import { i18n } from './i18n.js';
 import { PanelWebSocket } from './websocket.js';
 
@@ -237,6 +237,10 @@ export function updateVersionBadge(v) {
 const state = new AppState();
 window.appState = state;
 
+const validViews = ['dashboard', 'servers', 'console', 'files', 'plugins', 'modrinth', 'backups', 'monitoring', 'users', 'audit', 'settings'];
+let languageListenersBound = false;
+let mainListenersBound = false;
+
 async function bootstrap() {
   applyTranslations();
 
@@ -257,13 +261,15 @@ async function bootstrap() {
   const langSwitcher = document.getElementById('lang-switcher');
   if (langSwitcher) {
     langSwitcher.value = i18n.getLanguage();
-    langSwitcher.addEventListener('change', (e) => {
-      i18n.setLanguage(e.target.value);
-    });
   }
 
-  window.addEventListener('language:changed', (e) => handleLanguageChange(e.detail));
-  window.addEventListener('languagechange', () => handleLanguageChange(i18n.getLanguage()));
+  if (!languageListenersBound) {
+    languageListenersBound = true;
+    langSwitcher?.addEventListener('change', (e) => {
+      i18n.setLanguage(e.target.value);
+    });
+    window.addEventListener('language:changed', (e) => handleLanguageChange(e.detail));
+  }
 
   try {
     const setupStatus = await api.get('/api/setup/status');
@@ -293,7 +299,7 @@ async function bootstrap() {
     document.getElementById('app-loading').innerHTML = `
       <div style="color:#DC2626;font-weight:600;text-align:center;padding:24px;">
         Failed to connect to CraftPanel server.<br>
-        <span style="font-size:12px;color:#64748B;">${err.message}</span>
+        <span style="font-size:12px;color:#64748B;">${escapeHtml(err.message)}</span>
       </div>
     `;
   }
@@ -361,17 +367,43 @@ async function initMainApp() {
     rName.innerText = state.currentUser.roleId || 'user';
   }
 
+  bindMainListeners();
+
+  await populateServerSelector();
+
+  connectEventsWebSocket();
+
+  const hashView = window.location.hash.replace(/^#\/?/, '').trim();
+  const savedView = localStorage.getItem('craftpanel_active_view');
+  const initialView = (hashView && validViews.includes(hashView)) ? hashView : ((savedView && validViews.includes(savedView)) ? savedView : 'dashboard');
+  state.navigateTo(initialView);
+}
+
+function bindMainListeners() {
+  if (mainListenersBound) return;
+  mainListenersBound = true;
+
   document.getElementById('btn-logout')?.addEventListener('click', async () => {
     try {
       await api.post('/api/auth/logout');
     } catch (e) {}
     state.eventsWs?.close();
+    try { state.currentCleanup?.(); } catch (e) {}
+    state.currentCleanup = null;
     showScreen('login');
     setupLoginForm();
   });
 
   window.addEventListener('auth:unauthorized', () => {
     state.eventsWs?.close();
+    loadingModal.hide();
+    const modalHost = document.getElementById('modal-host');
+    if (modalHost) {
+      modalHost.style.display = 'none';
+      modalHost.innerHTML = '';
+    }
+    try { state.currentCleanup?.(); } catch (e) {}
+    state.currentCleanup = null;
     showScreen('login');
     setupLoginForm();
   });
@@ -382,24 +414,14 @@ async function initMainApp() {
     });
   });
 
-  await populateServerSelector();
-
-  setupHeaderQuickControls();
-
-  connectEventsWebSocket();
-
-  const validViews = ['dashboard', 'servers', 'console', 'files', 'plugins', 'modrinth', 'backups', 'monitoring', 'users', 'audit', 'settings'];
-  const hashView = window.location.hash.replace(/^#\/?/, '').trim();
-  const savedView = localStorage.getItem('craftpanel_active_view');
-  const initialView = (hashView && validViews.includes(hashView)) ? hashView : ((savedView && validViews.includes(savedView)) ? savedView : 'dashboard');
-  state.navigateTo(initialView);
-
   window.addEventListener('hashchange', () => {
     const hash = window.location.hash.replace(/^#\/?/, '').trim();
     if (hash && validViews.includes(hash) && hash !== state.currentView) {
       state.navigateTo(hash);
     }
   });
+
+  setupHeaderQuickControls();
 }
 
 async function populateServerSelector() {
@@ -681,10 +703,13 @@ function handleTaskUpdate(task) {
     if (badge) badge.style.display = 'inline-flex';
     if (countEl) countEl.innerText = `${task.message || 'Processing...'} (${task.progress}%)`;
   } else {
-    if (task.state === 'COMPLETED') {
-      toast.success(task.message || 'Task completed');
-    } else if (task.state === 'FAILED') {
-      toast.error(task.error || task.message || 'Task failed');
+    // Plugin installs report their own result in the install dialog.
+    if (task.type !== 'MODRINTH_INSTALL') {
+      if (task.state === 'COMPLETED') {
+        toast.success(task.message || 'Task completed');
+      } else if (task.state === 'FAILED') {
+        toast.error(task.error || task.message || 'Task failed');
+      }
     }
     if (badge) badge.style.display = 'none';
   }

@@ -5,7 +5,8 @@ import java.util.List;
 
 public class CompatibilityChecker {
     public static CompatibilityResult check(String serverSoftware, String serverVersion, ModrinthVersion version) {
-        String soft = serverSoftware != null ? serverSoftware.toLowerCase().trim() : "";
+        // Maps names like "CraftBukkit" or "Spigot / Paper" onto the fork's primary Modrinth loader.
+        String soft = serverSoftware != null ? ModrinthClient.compatibleLoaders(serverSoftware).get(0) : "";
         String mcVer = serverVersion != null ? serverVersion.trim() : "";
 
         List<String> loaders = version.loaders() != null ? version.loaders().stream().map(String::toLowerCase).toList() : List.of();
@@ -20,6 +21,9 @@ public class CompatibilityChecker {
                 loaderMatch = true;
                 matchingLoaders.add("folia");
             }
+        } else if ("purpur".equals(soft) && loaders.contains("purpur")) {
+            loaderMatch = true;
+            matchingLoaders.add("purpur");
         } else if ("paper".equals(soft) || "purpur".equals(soft)) {
             if (loaders.contains("paper")) {
                 loaderMatch = true;
@@ -58,7 +62,7 @@ public class CompatibilityChecker {
                 matchingVersions.add(gv);
                 break;
             }
-            if (mcVer.startsWith(gv) || gv.startsWith(mcVer)) {
+            if (isVersionFamily(gv, mcVer)) {
                 versionMatch = true;
                 matchingVersions.add(gv);
             }
@@ -128,5 +132,10 @@ public class CompatibilityChecker {
                 matchingVersions,
                 matchingLoaders
         );
+    }
+
+    // A listed "1.21" covers a 1.21.4 server; prefixes only count on a '.' boundary, so 1.21.1 never matches 1.21.10.
+    private static boolean isVersionFamily(String listedVersion, String serverVersion) {
+        return !listedVersion.isEmpty() && serverVersion.toLowerCase().startsWith(listedVersion.toLowerCase() + ".");
     }
 }

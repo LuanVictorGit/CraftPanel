@@ -125,7 +125,7 @@ function updateBreadcrumb(serverId, path) {
   let accum = '';
   parts.forEach(p => {
     accum += (accum ? '/' : '') + p;
-    html += ` <span style="color:var(--text-subtle);">/</span> <span style="cursor:pointer;color:var(--brand-primary);" class="bc-item" data-path="${accum}">${escapeHtml(p)}</span>`;
+    html += ` <span style="color:var(--text-subtle);">/</span> <span style="cursor:pointer;color:var(--brand-primary);" class="bc-item" data-path="${escapeHtml(accum)}">${escapeHtml(p)}</span>`;
   });
   bc.innerHTML = html;
 
@@ -158,7 +158,7 @@ function renderFileTable(serverId, items) {
           ${items.map(item => `
             <tr>
               <td>
-                <div style="display:flex;align-items:center;gap:8px;cursor:pointer;" class="file-name-click" data-path="${item.relativePath}" data-isdir="${item.isDirectory}">
+                <div style="display:flex;align-items:center;gap:8px;cursor:pointer;" class="file-name-click" data-path="${escapeHtml(item.relativePath)}" data-isdir="${item.isDirectory}">
                   ${item.isDirectory ? `
                     <svg style="width:18px;height:18px;color:#F59E0B;flex-shrink:0;" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
                   ` : `
@@ -375,4 +375,5 @@ async function handleUpload(event, serverId) {
     loadingModal.hide();
     toast.error('Upload failed: ' + e.message);
   }
+  event.target.value = '';
 }

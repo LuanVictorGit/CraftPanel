@@ -1,5 +1,6 @@
 package br.com.craftpanel;
 
+import br.com.craftpanel.backups.BackupService;
 import br.com.craftpanel.config.ConfigLoader;
 import br.com.craftpanel.config.PanelConfig;
 import br.com.craftpanel.monitoring.TickMonitor;
@@ -14,6 +15,7 @@ import org.bukkit.command.TabCompleter;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -25,6 +27,19 @@ public class CraftPanelPlugin extends JavaPlugin implements CommandExecutor, Tab
 
     public static CraftPanelPlugin getInstance() {
         return instance;
+    }
+
+    @Override
+    public void onLoad() {
+        // Runs before any world is loaded: the only safe moment to apply a restore staged from the panel.
+        File configFile = new File(getDataFolder(), "config.yml");
+        if (configFile.exists()) {
+            try {
+                BackupService.applyPendingRestore(ConfigLoader.load(configFile.getAbsolutePath()), Paths.get("").toAbsolutePath());
+            } catch (Throwable t) {
+                getLogger().severe("Failed to apply the pending backup restore: " + t);
+            }
+        }
     }
 
     @Override

@@ -68,6 +68,7 @@ public class CraftPanelServer {
     private ProcessManager processManager;
     private MonitoringWebSocketHandler monitoringWs;
     private ScheduledExecutorService scheduler;
+    private TaskManager taskManager;
     private volatile boolean running = false;
 
     private CraftPanelServer() {}
@@ -134,13 +135,13 @@ public class CraftPanelServer {
         this.userService = new UserService(userRepo);
         this.serverService = new ServerService(serverRepo, config);
         this.processManager = new ProcessManager();
-        FileManager fileManager = new FileManager();
+        FileManager fileManager = new FileManager(config);
         PluginManager pluginManager = new PluginManager(config);
         ModrinthClient modrinthClient = new ModrinthClient(config.modrinth().userAgent(), config.modrinth().apiUrl());
         ServerInstallerService installerService = new ServerInstallerService(serverService);
         BackupService backupService = new BackupService(db, config);
         MonitoringService monitoringService = new MonitoringService(processManager);
-        TaskManager taskManager = new TaskManager(db);
+        this.taskManager = new TaskManager(db);
         AuditService auditService = new AuditService(db);
         try {
             Class.forName("org.eclipse.jetty.io.ManagedSelector$CloseConnections");
@@ -343,6 +344,9 @@ public class CraftPanelServer {
         LOGGER.info("Stopping CraftPanel Web server...");
         if (scheduler != null) {
             scheduler.shutdownNow();
+        }
+        if (taskManager != null) {
+            taskManager.shutdown();
         }
         if (monitoringWs != null) {
             monitoringWs.stop();

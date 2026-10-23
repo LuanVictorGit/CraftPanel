@@ -21,7 +21,7 @@ public class AuthService {
     private final Map<String, WsTicket> wsTickets = new ConcurrentHashMap<>();
 
     private record LoginAttempt(int count, Instant lockedUntil) {}
-    private record WsTicket(String userId, Instant expiresAt) {}
+    private record WsTicket(String userId, String sessionToken, Instant expiresAt) {}
 
     public AuthService(UserRepository userRepo, PanelConfig config) {
         this.userRepo = userRepo;
@@ -109,7 +109,8 @@ public class AuthService {
         }
     }
 
-    public void changePassword(String userId, String oldPassword, String newPassword) {
+    /** Changes the password and signs the user out everywhere except {@code currentSessionToken} (may be null). */
+    public void changePassword(String userId, String oldPassword, String newPassword, String currentSessionToken) {
         if (newPassword == null || newPassword.length() < 8) {
             throw new IllegalArgumentException("New password must be at least 8 characters");
         }
@@ -119,25 +120,44 @@ public class AuthService {
         }
         String newHash = PasswordHasher.hash(newPassword);
         userRepo.updatePassword(userId, newHash);
+        userRepo.deleteSessionsForUser(userId, currentSessionToken);
     }
 
-    public String createWebSocketTicket(String userId) {
+    /** Tickets are bound to the issuing session so WebSocket handlers can re-check it after connecting. */
+    public String createWebSocketTicket(String userId, String sessionToken) {
         byte[] bytes = new byte[24];
         random.nextBytes(bytes);
         String ticket = HexFormat.of().formatHex(bytes);
-        wsTickets.put(ticket, new WsTicket(userId, Instant.now().plus(30, ChronoUnit.SECONDS)));
+        wsTickets.put(ticket, new WsTicket(userId, sessionToken, Instant.now().plus(30, ChronoUnit.SECONDS)));
         return ticket;
     }
 
     public Optional<String> validateWebSocketTicket(String ticket) {
-        if (ticket == null || ticket.isBlank()) {
+        WsTicket wsTicket = takeWebSocketTicket(ticket);
+        if (wsTicket == null) {
             return Optional.empty();
         }
-        WsTicket wsTicket = wsTickets.remove(ticket);
-        if (wsTicket != null && Instant.now().isBefore(wsTicket.expiresAt())) {
+        if (wsTicket.sessionToken() == null) {
             return Optional.of(wsTicket.userId());
         }
-        return Optional.empty();
+        return validateSession(wsTicket.sessionToken()).map(Session::userId);
+    }
+
+    /** Redeems a ticket for the session it was issued from; empty if the ticket or that session is no longer valid. */
+    public Optional<Session> redeemWebSocketTicket(String ticket) {
+        WsTicket wsTicket = takeWebSocketTicket(ticket);
+        if (wsTicket == null || wsTicket.sessionToken() == null) {
+            return Optional.empty();
+        }
+        return validateSession(wsTicket.sessionToken());
+    }
+
+    private WsTicket takeWebSocketTicket(String ticket) {
+        if (ticket == null || ticket.isBlank()) {
+            return null;
+        }
+        WsTicket wsTicket = wsTickets.remove(ticket);
+        return wsTicket != null && Instant.now().isBefore(wsTicket.expiresAt()) ? wsTicket : null;
     }
 
     private String generateSecureToken() {

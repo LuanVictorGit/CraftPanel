@@ -21,8 +21,12 @@ let paginationState = {
   currentPage: 1,
   pageSize: 24,
   totalHits: 0,
-  totalPages: 1
+  totalPages: 1,
+  query: '',
+  version: '',
+  loader: ''
 };
+let searchSeq = 0;
 
 export async function renderModrinth(root, state) {
   const serverId = state.activeServerId || 'local';
@@ -32,7 +36,8 @@ export async function renderModrinth(root, state) {
   let serverMcVersion = '';
 
   try {
-    const srv = await api.get('/api/servers/' + serverId);
+    const res = await api.get('/api/servers/' + serverId);
+    const srv = res?.server;
     if (srv) {
       const soft = (srv.software || '').toLowerCase();
       serverForkName = srv.software || '';
@@ -65,7 +70,7 @@ export async function renderModrinth(root, state) {
           <div style="width:170px;">
             <select id="modrinth-version-filter" class="form-select" title="${i18n.t('minecraftVersion')}">
               <option value="">${i18n.t('allVersions')}</option>
-              ${serverMcVersion && !ALL_MC_VERSIONS.includes(serverMcVersion) ? `<option value="${serverMcVersion}">${serverMcVersion} (${serverForkName || 'Server'})</option>` : ''}
+              ${serverMcVersion && !ALL_MC_VERSIONS.includes(serverMcVersion) ? `<option value="${escapeHtml(serverMcVersion)}">${escapeHtml(serverMcVersion)} (${escapeHtml(serverForkName || 'Server')})</option>` : ''}
               ${versionOptions}
             </select>
           </div>
@@ -142,7 +147,7 @@ export async function renderModrinth(root, state) {
       });
       let html = `<option value="">${i18n.t('allVersions')}</option>`;
       if (serverMcVersion && !merged.includes(serverMcVersion)) {
-        html += `<option value="${serverMcVersion}">${serverMcVersion} (${serverForkName || 'Server'})</option>`;
+        html += `<option value="${escapeHtml(serverMcVersion)}">${escapeHtml(serverMcVersion)} (${escapeHtml(serverForkName || 'Server')})</option>`;
       }
       html += merged.map(v => `<option value="${v}">${v}</option>`).join('');
       select.innerHTML = html;
@@ -154,11 +159,14 @@ export async function renderModrinth(root, state) {
 async function executeSearch(serverId, targetPage = null) {
   if (targetPage !== null) {
     paginationState.currentPage = targetPage;
+  } else {
+    paginationState.query = document.getElementById('modrinth-search-input')?.value.trim() || '';
+    paginationState.version = document.getElementById('modrinth-version-filter')?.value || '';
+    paginationState.loader = document.getElementById('modrinth-loader-filter')?.value || '';
   }
 
-  const query = document.getElementById('modrinth-search-input')?.value.trim() || '';
-  const version = document.getElementById('modrinth-version-filter')?.value || '';
-  const loader = document.getElementById('modrinth-loader-filter')?.value || '';
+  const { query, version, loader } = paginationState;
+  const seq = ++searchSeq;
 
   const badgeEl = document.getElementById('modrinth-fork-badge');
   if (badgeEl) {
@@ -185,6 +193,7 @@ async function executeSearch(serverId, targetPage = null) {
       offset: offset
     });
 
+    if (seq !== searchSeq) return;
     paginationState.totalHits = res.totalHits || 0;
     paginationState.totalPages = Math.max(1, Math.ceil(paginationState.totalHits / paginationState.pageSize));
 
@@ -196,6 +205,7 @@ async function executeSearch(serverId, targetPage = null) {
       }
     });
   } catch (e) {
+    if (seq !== searchSeq) return;
     if (container) {
       container.innerHTML = `<div style="text-align:center;padding:32px;color:var(--accent-rose);">Search error: ${escapeHtml(e.message)}</div>`;
     }
@@ -360,14 +370,17 @@ async function openProjectModal(projectId, serverId) {
 
                   let compBadge = '';
                   if (comp) {
+                    const compTitle = escapeHtml(comp.message);
                     if (comp.status === 'COMPATIBLE_CONFIRMED') {
-                      compBadge = `<span class="badge badge-green" title="${comp.message}">Confirmed</span>`;
+                      compBadge = `<span class="badge badge-green" title="${compTitle}">Confirmed</span>`;
                     } else if (comp.status === 'PARTIAL_COMPATIBILITY') {
-                      compBadge = `<span class="badge badge-amber" title="${comp.message}">Partial</span>`;
+                      compBadge = `<span class="badge badge-amber" title="${compTitle}">Partial</span>`;
                     } else if (comp.status === 'NEEDS_ANALYSIS') {
-                      compBadge = `<span class="badge badge-amber" title="${comp.message}">Review</span>`;
+                      compBadge = `<span class="badge badge-amber" title="${compTitle}">Review</span>`;
+                    } else if (comp.status === 'UNCONFIRMED') {
+                      compBadge = `<span class="badge badge-gray" title="${compTitle}">Unknown</span>`;
                     } else {
-                      compBadge = `<span class="badge badge-rose" title="${comp.message}">Incompatible</span>`;
+                      compBadge = `<span class="badge badge-rose" title="${compTitle}">Incompatible</span>`;
                     }
                   }
 
@@ -380,9 +393,9 @@ async function openProjectModal(projectId, serverId) {
                       <td style="text-align:right;">
                         ${primaryFile && serverId ? `
                           <button class="btn btn-primary btn-sm btn-install-file"
-                            data-url="${primaryFile.url}"
-                            data-filename="${primaryFile.filename}"
-                            data-hash="${primaryFile.hashes?.sha512 || primaryFile.hashes?.sha1 || ''}"
+                            data-url="${escapeHtml(primaryFile.url)}"
+                            data-filename="${escapeHtml(primaryFile.filename)}"
+                            data-hash="${escapeHtml(primaryFile.hashes?.sha512 || primaryFile.hashes?.sha1 || '')}"
                             data-project="${escapeHtml(project.title)}">
                             ${i18n.t('install')}
                           </button>
@@ -419,24 +432,10 @@ async function openProjectModal(projectId, serverId) {
             projectName
           });
 
-          if (task && task.id) {
-            for (let i = 0; i < 40; i++) {
-              await new Promise(r => setTimeout(r, 600));
-              loadingModal.update(Math.min(25 + i * 2.5, 95), `${i18n.t('downloadingAndInstalling')} - ${projectName}...`);
-              try {
-                const t = await api.get(`/api/tasks/${task.id}`);
-                if (t.state === 'COMPLETED') {
-                  break;
-                } else if (t.state === 'FAILED' || t.state === 'CANCELLED') {
-                  throw new Error(t.error || t.message || 'Installation task failed');
-                }
-              } catch (pe) {
-                if (pe.message && (pe.message.includes('failed') || pe.message.includes('mismatch'))) {
-                  throw pe;
-                }
-              }
-            }
-          }
+          if (!task?.id) throw new Error('Install task was not created');
+          await api.waitForTask(task.id, t => {
+            loadingModal.update(Math.min(25 + (t.progress || 0) * 0.7, 95), `${i18n.t('downloadingAndInstalling')} - ${projectName}...`);
+          });
 
           loadingModal.update(100, i18n.t('installedSuccess'));
           btn.innerText = i18n.t('installed');
@@ -453,6 +452,13 @@ async function openProjectModal(projectId, serverId) {
     });
 
   } catch (e) {
-    toast.error('Failed to load project details: ' + e.message);
+    modal.open({
+      title: i18n.t('error'),
+      wide: true,
+      contentHtml: `<div style="text-align:center;padding:32px;color:var(--accent-rose);">Failed to load project details: ${escapeHtml(e.message)}</div>`,
+      footerButtons: [
+        { text: i18n.t('close'), className: 'btn-secondary', onClick: (close) => close() }
+      ]
+    });
   }
 }

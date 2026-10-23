@@ -375,6 +375,23 @@ public class UserRepository {
         }
     }
 
+    /** Deletes every session of the user except {@code keepToken} (pass null to delete them all). */
+    public void deleteSessionsForUser(String userId, String keepToken) {
+        String sql = keepToken == null
+                ? "DELETE FROM sessions WHERE user_id = ?"
+                : "DELETE FROM sessions WHERE user_id = ? AND token <> ?";
+        try (Connection conn = db.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, userId);
+            if (keepToken != null) {
+                stmt.setString(2, keepToken);
+            }
+            stmt.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("Error revoking user sessions", e);
+        }
+    }
+
     public void deleteExpiredSessions() {
         String sql = "DELETE FROM sessions WHERE expires_at < ?";
         try (Connection conn = db.getConnection();

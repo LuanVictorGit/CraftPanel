@@ -373,6 +373,14 @@ public class ServerProcess {
         stopWaiter.start();
     }
 
+    /** Releases panel-side resources (the log tailer) without touching the host server. */
+    public void detach() {
+        Thread tailer = logTailerThread;
+        if (tailer != null) {
+            tailer.interrupt();
+        }
+    }
+
     public synchronized void kill() {
         if (isHostInstance) {
             CraftPanelPlugin plugin = CraftPanelPlugin.getInstance();

@@ -15,6 +15,7 @@ export class PanelWebSocket {
     this.closedExplicitly = false;
     try {
       const ticketRes = await api.post('/api/auth/ws-ticket');
+      if (this.closedExplicitly) return;
       const ticket = ticketRes.ticket;
 
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';

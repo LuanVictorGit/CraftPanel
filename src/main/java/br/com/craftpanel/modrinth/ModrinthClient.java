@@ -5,12 +5,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -23,10 +25,16 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
 public class ModrinthClient {
     private static final Logger LOGGER = LoggerFactory.getLogger(ModrinthClient.class);
+    private static final Duration API_TIMEOUT = Duration.ofSeconds(30);
+    private static final Duration DOWNLOAD_TIMEOUT = Duration.ofMinutes(5);
     private final HttpClient httpClient;
     private final ObjectMapper mapper;
     private final String baseUrl;
@@ -49,6 +57,20 @@ public class ModrinthClient {
             int limit
     ) {}
 
+    /**
+     * Modrinth loaders whose plugins run on the given fork, e.g. a Paper server also runs Spigot and Bukkit
+     * plugins. Folia only runs plugins that declare Folia support.
+     */
+    public static List<String> compatibleLoaders(String loaderOrSoftware) {
+        String soft = loaderOrSoftware.toLowerCase().trim();
+        if (soft.contains("folia")) return List.of("folia");
+        if (soft.contains("purpur")) return List.of("purpur", "paper", "spigot", "bukkit");
+        if (soft.contains("paper")) return List.of("paper", "spigot", "bukkit");
+        if (soft.contains("spigot")) return List.of("spigot", "bukkit");
+        if (soft.contains("bukkit")) return List.of("bukkit");
+        return List.of(soft);
+    }
+
     public SearchResult search(String query, String gameVersion, String loader, String index, int limit, int offset) throws Exception {
         StringBuilder url = new StringBuilder(baseUrl).append("/search?");
         List<String> params = new ArrayList<>();
@@ -61,7 +83,9 @@ public class ModrinthClient {
         facets.add("[\"project_type:plugin\"]");
 
         if (loader != null && !loader.isBlank()) {
-            facets.add("[\"categories:" + loader.toLowerCase().trim() + "\"]");
+            facets.add(compatibleLoaders(loader).stream()
+                    .map(l -> "\"categories:" + l + "\"")
+                    .collect(Collectors.joining(",", "[", "]")));
         }
         if (gameVersion != null && !gameVersion.isBlank()) {
             facets.add("[\"versions:" + gameVersion.trim() + "\"]");
@@ -80,6 +104,7 @@ public class ModrinthClient {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(url.toString()))
                 .header("User-Agent", userAgent)
+                .timeout(API_TIMEOUT)
                 .GET()
                 .build();
 
@@ -110,6 +135,7 @@ public class ModrinthClient {
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(url))
                     .header("User-Agent", userAgent)
+                    .timeout(API_TIMEOUT)
                     .GET()
                     .build();
 
@@ -136,7 +162,10 @@ public class ModrinthClient {
 
         List<String> params = new ArrayList<>();
         if (loader != null && !loader.isBlank()) {
-            params.add("loaders=" + URLEncoder.encode("[\"" + loader.toLowerCase().trim() + "\"]", StandardCharsets.UTF_8));
+            String loaders = compatibleLoaders(loader).stream()
+                    .map(l -> "\"" + l + "\"")
+                    .collect(Collectors.joining(",", "[", "]"));
+            params.add("loaders=" + URLEncoder.encode(loaders, StandardCharsets.UTF_8));
         }
         if (gameVersion != null && !gameVersion.isBlank()) {
             params.add("game_versions=" + URLEncoder.encode("[\"" + gameVersion.trim() + "\"]", StandardCharsets.UTF_8));
@@ -146,6 +175,7 @@ public class ModrinthClient {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(url.toString()))
                 .header("User-Agent", userAgent)
+                .timeout(API_TIMEOUT)
                 .GET()
                 .build();
 
@@ -168,46 +198,68 @@ public class ModrinthClient {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(downloadUrl))
                 .header("User-Agent", userAgent)
+                .timeout(API_TIMEOUT)
                 .GET()
                 .build();
 
         HttpResponse<InputStream> response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
         if (response.statusCode() != 200) {
+            response.body().close();
             throw new IllegalStateException("Download failed with HTTP " + response.statusCode());
         }
 
         long contentLength = response.headers().firstValueAsLong("Content-Length").orElse(-1L);
         Path tempFile = destination.resolveSibling(destination.getFileName().toString() + ".download");
 
-        MessageDigest digest = expectedHash != null && expectedHash.length() == 128
+        MessageDigest digest = expectedHash != null && expectedHash.trim().length() == 128
                 ? MessageDigest.getInstance("SHA-512")
                 : MessageDigest.getInstance("SHA-1");
 
-        try (InputStream in = response.body();
-             var out = Files.newOutputStream(tempFile)) {
-            byte[] buf = new byte[8192];
-            long totalRead = 0;
-            int n;
-            while ((n = in.read(buf)) != -1) {
-                out.write(buf, 0, n);
-                digest.update(buf, 0, n);
-                totalRead += n;
-                if (contentLength > 0 && progressConsumer != null) {
-                    int percent = (int) ((totalRead * 100) / contentLength);
-                    progressConsumer.accept(percent);
+        // HttpRequest.timeout() stops counting once the headers arrive, so a stalled body is cut off by closing it.
+        InputStream body = response.body();
+        AtomicBoolean timedOut = new AtomicBoolean();
+        CompletableFuture<Void> watchdog = CompletableFuture.runAsync(() -> {
+            timedOut.set(true);
+            try {
+                body.close();
+            } catch (IOException ignored) {}
+        }, CompletableFuture.delayedExecutor(DOWNLOAD_TIMEOUT.toSeconds(), TimeUnit.SECONDS));
+
+        try {
+            try (InputStream in = body;
+                 var out = Files.newOutputStream(tempFile)) {
+                byte[] buf = new byte[8192];
+                long totalRead = 0;
+                int n;
+                while ((n = in.read(buf)) != -1) {
+                    out.write(buf, 0, n);
+                    digest.update(buf, 0, n);
+                    totalRead += n;
+                    if (contentLength > 0 && progressConsumer != null) {
+                        int percent = (int) ((totalRead * 100) / contentLength);
+                        progressConsumer.accept(percent);
+                    }
                 }
             }
-        }
 
-        if (expectedHash != null && !expectedHash.isBlank()) {
-            String calculated = HexFormat.of().formatHex(digest.digest());
-            if (!calculated.equalsIgnoreCase(expectedHash.trim())) {
-                Files.deleteIfExists(tempFile);
-                throw new SecurityException("Downloaded file hash mismatch: expected " + expectedHash + " but got " + calculated);
+            if (expectedHash != null && !expectedHash.isBlank()) {
+                String calculated = HexFormat.of().formatHex(digest.digest());
+                if (!calculated.equalsIgnoreCase(expectedHash.trim())) {
+                    throw new SecurityException("Downloaded file hash mismatch: expected " + expectedHash + " but got " + calculated);
+                }
             }
-        }
 
-        Files.move(tempFile, destination, StandardCopyOption.REPLACE_EXISTING);
+            Files.move(tempFile, destination, StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException e) {
+            if (timedOut.get()) {
+                throw new HttpTimeoutException("Download did not finish within " + DOWNLOAD_TIMEOUT.toMinutes() + " minutes");
+            }
+            throw e;
+        } finally {
+            watchdog.cancel(false);
+            // A dropped connection or a hash mismatch must not leave a half-written file behind.
+            Files.deleteIfExists(tempFile);
+        }
     }
 
     private ModrinthProject mapProjectFromSearch(JsonNode node) {
@@ -320,6 +372,7 @@ public class ModrinthClient {
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(baseUrl + "/tag/game_version"))
                     .header("User-Agent", userAgent)
+                    .timeout(API_TIMEOUT)
                     .GET()
                     .build();
 
