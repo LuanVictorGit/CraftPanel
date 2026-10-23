@@ -60,14 +60,14 @@ public class ConsoleWebSocketHandler {
             Authenticated auth = authenticate(ctx);
 
             if (auth == null) {
-                ctx.send(MAPPER.writeValueAsString(Map.of("type", "error", "message", "Unauthorized")));
+                WebSocketSender.send(ctx, MAPPER.writeValueAsString(Map.of("type", "error", "message", "Unauthorized")));
                 ctx.closeSession();
                 return;
             }
             User user = auth.user();
 
             if (!userService.hasServerPermission(user, serverId, Permission.CONSOLE_VIEW)) {
-                ctx.send(MAPPER.writeValueAsString(Map.of("type", "error", "message", "Permission denied: console.view")));
+                WebSocketSender.send(ctx, MAPPER.writeValueAsString(Map.of("type", "error", "message", "Permission denied: console.view")));
                 ctx.closeSession();
                 return;
             }
@@ -86,7 +86,7 @@ public class ConsoleWebSocketHandler {
             }
 
             if (proc == null) {
-                ctx.send(MAPPER.writeValueAsString(Map.of("type", "error", "message", "Server process unavailable for " + serverId)));
+                WebSocketSender.send(ctx, MAPPER.writeValueAsString(Map.of("type", "error", "message", "Server process unavailable for " + serverId)));
                 ctx.closeSession();
                 return;
             }
@@ -95,7 +95,7 @@ public class ConsoleWebSocketHandler {
                 @Override
                 public void onLine(ConsoleLine line) {
                     try {
-                        ctx.send(MAPPER.writeValueAsString(Map.of(
+                        WebSocketSender.send(ctx, MAPPER.writeValueAsString(Map.of(
                                 "type", "line",
                                 "line", line.line(),
                                 "level", line.level(),
@@ -107,7 +107,7 @@ public class ConsoleWebSocketHandler {
                 @Override
                 public void onStateChanged(ProcessState newState) {
                     try {
-                        ctx.send(MAPPER.writeValueAsString(Map.of(
+                        WebSocketSender.send(ctx, MAPPER.writeValueAsString(Map.of(
                                 "type", "state",
                                 "state", newState.name()
                         )));
@@ -119,7 +119,7 @@ public class ConsoleWebSocketHandler {
             clients.put(ctx, new ClientContext(user.id(), auth.sessionToken(), serverId, listener));
 
             List<ConsoleLine> backlog = proc.getBuffer().getLines();
-            ctx.send(MAPPER.writeValueAsString(Map.of(
+            WebSocketSender.send(ctx, MAPPER.writeValueAsString(Map.of(
                     "type", "backlog",
                     "lines", backlog,
                     "state", proc.getState().name()
@@ -133,7 +133,7 @@ public class ConsoleWebSocketHandler {
             // Logout, password changes, deleted accounts and role changes must apply to an already open console.
             User user = currentUser(client);
             if (user == null || !userService.hasServerPermission(user, client.serverId(), Permission.CONSOLE_VIEW)) {
-                ctx.send(MAPPER.writeValueAsString(Map.of("type", "error", "message", "Session expired or access revoked")));
+                WebSocketSender.send(ctx, MAPPER.writeValueAsString(Map.of("type", "error", "message", "Session expired or access revoked")));
                 ctx.closeSession();
                 return;
             }
@@ -147,7 +147,7 @@ public class ConsoleWebSocketHandler {
                     String buffer = node.path("buffer").asText("");
                     List<String> completions = resolveTabCompletions(buffer);
                     Map<String, String> hint = resolveCommandHint(buffer);
-                    ctx.send(MAPPER.writeValueAsString(Map.of(
+                    WebSocketSender.send(ctx, MAPPER.writeValueAsString(Map.of(
                             "type", "tab_complete",
                             "buffer", buffer,
                             "completions", completions,
@@ -162,7 +162,7 @@ public class ConsoleWebSocketHandler {
             } catch (Exception ignored) {}
 
             if (!userService.hasServerPermission(user, client.serverId(), Permission.CONSOLE_EXECUTE)) {
-                ctx.send(MAPPER.writeValueAsString(Map.of("type", "error", "message", "Permission denied: console.execute")));
+                WebSocketSender.send(ctx, MAPPER.writeValueAsString(Map.of("type", "error", "message", "Permission denied: console.execute")));
                 return;
             }
 
@@ -175,7 +175,7 @@ public class ConsoleWebSocketHandler {
                     try {
                         proc.sendCommand(command.trim());
                     } catch (Exception e) {
-                        ctx.send(MAPPER.writeValueAsString(Map.of("type", "error", "message", e.getMessage())));
+                        WebSocketSender.send(ctx, MAPPER.writeValueAsString(Map.of("type", "error", "message", e.getMessage())));
                     }
                 }
             }

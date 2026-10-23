@@ -2,6 +2,7 @@ package br.com.craftpanel.monitoring;
 
 import br.com.craftpanel.auth.AuthService;
 import br.com.craftpanel.auth.Session;
+import br.com.craftpanel.console.WebSocketSender;
 import br.com.craftpanel.servers.MinecraftServer;
 import br.com.craftpanel.servers.ServerService;
 import br.com.craftpanel.users.User;
@@ -13,6 +14,7 @@ import io.javalin.websocket.WsContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -20,6 +22,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class MonitoringWebSocketHandler {
     private static final Logger LOGGER = LoggerFactory.getLogger(MonitoringWebSocketHandler.class);
@@ -32,6 +35,7 @@ public class MonitoringWebSocketHandler {
 
     private final Set<WsContext> clients = ConcurrentHashMap.newKeySet();
     private final Map<WsContext, String> clientServerMap = new ConcurrentHashMap<>();
+    private final AtomicBoolean collectionFailureLogged = new AtomicBoolean();
     private final ScheduledExecutorService scheduler;
 
     public MonitoringWebSocketHandler(
@@ -67,26 +71,23 @@ public class MonitoringWebSocketHandler {
             clients.add(ctx);
             clientServerMap.put(ctx, serverId);
 
-            ctx.send(MAPPER.writeValueAsString(Map.of("type", "connected", "serverId", serverId)));
+            WebSocketSender.send(ctx, MAPPER.writeValueAsString(Map.of("type", "connected", "serverId", serverId)));
 
-            sendTelemetry(ctx, serverId);
+            String telemetry = telemetryJson(serverId);
+            if (telemetry != null) {
+                WebSocketSender.send(ctx, telemetry);
+            }
         });
 
-        ws.onClose(ctx -> {
-            clients.remove(ctx);
-            clientServerMap.remove(ctx);
-        });
+        ws.onClose(this::forget);
 
-        ws.onError(ctx -> {
-            clients.remove(ctx);
-            clientServerMap.remove(ctx);
-        });
+        ws.onError(this::forget);
 
         ws.onMessage(ctx -> {
             try {
                 String message = ctx.message();
                 if (message.contains("ping")) {
-                    ctx.send(MAPPER.writeValueAsString(Map.of("type", "pong", "time", System.currentTimeMillis())));
+                    WebSocketSender.send(ctx, MAPPER.writeValueAsString(Map.of("type", "pong", "time", System.currentTimeMillis())));
                 }
             } catch (Exception ignored) {}
         });
@@ -97,30 +98,39 @@ public class MonitoringWebSocketHandler {
             return;
         }
 
+        Map<String, String> payloads = new HashMap<>();
         for (WsContext ctx : clients) {
-            try {
-                String serverId = clientServerMap.getOrDefault(ctx, "local");
-                sendTelemetry(ctx, serverId);
-            } catch (Exception e) {
-                clients.remove(ctx);
-                clientServerMap.remove(ctx);
+            String serverId = clientServerMap.getOrDefault(ctx, "local");
+            String json = payloads.computeIfAbsent(serverId, this::telemetryJson);
+            if (json != null && !WebSocketSender.send(ctx, json)) {
+                forget(ctx);
             }
         }
     }
 
-    private void sendTelemetry(WsContext ctx, String serverId) {
+    private String telemetryJson(String serverId) {
         try {
             Optional<MinecraftServer> serverOpt = serverService.getServer(serverId);
             if (serverOpt.isEmpty()) {
-                return;
+                return null;
             }
 
             SparkTelemetry telemetry = monitoringService.collectSparkTelemetry(serverOpt.get());
             String json = MAPPER.writeValueAsString(Map.of("type", "telemetry", "data", telemetry));
-            ctx.send(json);
+            collectionFailureLogged.set(false);
+            return json;
         } catch (Exception e) {
-            LOGGER.error("Failed to send spark telemetry to websocket", e);
+            // Runs every second: log the first failure, not a stack trace per tick.
+            if (collectionFailureLogged.compareAndSet(false, true)) {
+                LOGGER.warn("Failed to collect spark telemetry: {}", e.toString());
+            }
+            return null;
         }
+    }
+
+    private void forget(WsContext ctx) {
+        clients.remove(ctx);
+        clientServerMap.remove(ctx);
     }
 
     private User authenticate(WsContext ctx) {

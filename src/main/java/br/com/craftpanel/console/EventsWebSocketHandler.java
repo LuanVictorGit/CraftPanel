@@ -42,7 +42,7 @@ public class EventsWebSocketHandler implements TaskManager.TaskListener {
                 return;
             }
             clients.put(ctx, client);
-            ctx.send(MAPPER.writeValueAsString(Map.of("type", "connected")));
+            WebSocketSender.send(ctx, MAPPER.writeValueAsString(Map.of("type", "connected")));
         });
 
         ws.onClose(clients::remove);
@@ -53,9 +53,7 @@ public class EventsWebSocketHandler implements TaskManager.TaskListener {
         try {
             String json = MAPPER.writeValueAsString(Map.of("type", type, "payload", payload));
             for (WsContext ctx : clients.keySet()) {
-                try {
-                    ctx.send(json);
-                } catch (Exception ignored) {
+                if (!WebSocketSender.send(ctx, json)) {
                     clients.remove(ctx);
                 }
             }
@@ -84,9 +82,7 @@ public class EventsWebSocketHandler implements TaskManager.TaskListener {
                 if (!userService.hasServerPermission(user, serverId, permission)) {
                     continue;
                 }
-                try {
-                    ctx.send(json);
-                } catch (Exception ignored) {
+                if (!WebSocketSender.send(ctx, json)) {
                     clients.remove(ctx);
                 }
             }
