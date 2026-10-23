@@ -157,7 +157,14 @@ public class ServerController {
 
         ServerProcess proc = processManager.getProcess(id);
         if (proc != null) {
-            proc.restart(25);
+            try {
+                proc.restart(25);
+            } catch (IllegalStateException e) {
+                // Nothing was stopped: the server keeps running.
+                auditService.log(user.id(), user.username(), "SERVER_RESTART", "SERVER", id, e.getMessage(), ctx.ip(), "FAILURE");
+                ctx.status(500).json(Map.of("error", e.getMessage()));
+                return;
+            }
             auditService.log(user.id(), user.username(), "SERVER_RESTART", "SERVER", id, "Requested server restart", ctx.ip(), "SUCCESS");
         }
         ctx.json(Map.of("success", true));

@@ -401,34 +401,20 @@ public class ServerProcess {
     public synchronized void restart(int timeoutSeconds) {
         setState(ProcessState.STOPPING);
         if (isHostInstance) {
-            Thread relaunchThread = new Thread(() -> {
-                try {
-                    Thread.sleep(1500);
-                    boolean isWindows = System.getProperty("os.name", "").toLowerCase().contains("win");
-                    if (isWindows) {
-                        File startBat = new File("start.bat");
-                        File runBat = new File("run-server.bat");
-                        if (startBat.exists()) {
-                            new ProcessBuilder("cmd.exe", "/c", "start", "start.bat").directory(new File(".")).start();
-                        } else if (runBat.exists()) {
-                            new ProcessBuilder("cmd.exe", "/c", "start", "run-server.bat").directory(new File(".")).start();
-                        }
-                    } else {
-                        File startSh = new File("start.sh");
-                        File runSh = new File("run.sh");
-                        if (startSh.exists()) {
-                            new ProcessBuilder("bash", "start.sh").directory(new File(".")).start();
-                        } else if (runSh.exists()) {
-                            new ProcessBuilder("bash", "run.sh").directory(new File(".")).start();
-                        }
-                    }
-                } catch (Exception e) {
-                    LOGGER.error("Failed to launch detached restart process", e);
+            if (HostRestarter.isPending()) {
+                return; // the first request already stopped the server
+            }
+            // The panel stops with the server, so a helper process starts it again once this JVM has exited.
+            CraftPanelPlugin plugin = CraftPanelPlugin.getInstance();
+            try {
+                if (plugin == null || !plugin.isEnabled()) {
+                    throw new IOException("CraftPanel is not enabled");
                 }
-            }, "craftpanel-restarter");
-            relaunchThread.setDaemon(true);
-            relaunchThread.start();
-
+                HostRestarter.schedule(plugin.getDataFolder());
+            } catch (IOException | RuntimeException e) {
+                setState(ProcessState.RUNNING);
+                throw new IllegalStateException("Could not prepare the restart: " + e.getMessage(), e);
+            }
             dispatchBukkitCommand("stop");
             return;
         }

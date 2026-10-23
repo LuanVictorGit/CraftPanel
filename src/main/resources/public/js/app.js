@@ -466,7 +466,7 @@ function showServerTransitionOverlay(cfg) {
         </svg>
       </div>
     `;
-  } else if (cfg.status === 'stopped') {
+  } else if (cfg.status === 'stopped' || cfg.status === 'failed') {
     iconHtml = `
       <div class="server-lifecycle-icon-wrap stopped">
         <svg style="width:38px;height:38px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
@@ -477,9 +477,10 @@ function showServerTransitionOverlay(cfg) {
     `;
     actionsHtml = `
       <div class="server-lifecycle-actions">
+        ${cfg.status === 'stopped' ? `
         <button id="btn-lifecycle-start" class="btn btn-success" style="font-weight:600;padding:8px 20px;">
           ${i18n.t('startServer')}
-        </button>
+        </button>` : ''}
         <button id="btn-lifecycle-close" class="btn btn-secondary" style="padding:8px 16px;">
           ${i18n.t('close')}
         </button>
@@ -605,14 +606,32 @@ async function executeServerAction(action) {
     try {
       await api.post(`/api/servers/${serverId}/restart`);
     } catch (e) {
-      toast.error(e.message);
+      // A refused restart leaves the server running; a dropped connection (TypeError) means it is already going down.
+      if (!(e instanceof TypeError)) {
+        hideServerTransitionOverlay();
+        toast.error(e.message);
+        state.updateHeaderControls();
+        return;
+      }
     }
     state.updateHeaderControls();
 
+    // The panel goes down with the server and comes back with it; give up if that takes more than five minutes.
+    const deadline = Date.now() + 5 * 60 * 1000;
     let waited = 0;
     lifecyclePollInterval = setInterval(async () => {
       waited++;
       if (waited < 3) return;
+      if (Date.now() > deadline) {
+        clearInterval(lifecyclePollInterval);
+        lifecyclePollInterval = null;
+        showServerTransitionOverlay({
+          status: 'failed',
+          title: i18n.t('serverRestartTimeoutTitle'),
+          desc: i18n.t('serverRestartTimeoutDesc')
+        });
+        return;
+      }
       try {
         const res = await api.get(`/api/servers/${serverId}/status`);
         if (res.status === 'RUNNING') {
