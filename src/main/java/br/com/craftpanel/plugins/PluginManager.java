@@ -28,9 +28,12 @@ import java.util.concurrent.TimeUnit;
 public class PluginManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(PluginManager.class);
     private final PanelConfig config;
+    private final PluginRemovalQueue removalQueue;
 
     public PluginManager(PanelConfig config) {
         this.config = config;
+        this.removalQueue = new PluginRemovalQueue(Paths.get(config.storage().dataDirectory(), "pending-plugin-removals.txt"));
+        this.removalQueue.resume();
     }
 
     public List<InstalledPlugin> listPlugins(MinecraftServer server) {
@@ -76,7 +79,8 @@ public class PluginManager {
             }
 
             boolean isFileDisabled = file.getName().toLowerCase().endsWith(".disabled");
-            boolean pendingRestart = !isFileDisabled && bukkitPm != null && !loadedInServer;
+            boolean pendingRemoval = removalQueue.contains(file.toPath());
+            boolean pendingRestart = !pendingRemoval && !isFileDisabled && bukkitPm != null && !loadedInServer;
             boolean effectiveEnabled = loadedInServer ? enabledInServer : !isFileDisabled;
 
             result.add(new InstalledPlugin(
@@ -91,6 +95,7 @@ public class PluginManager {
                     effectiveEnabled,
                     loadedInServer,
                     pendingRestart,
+                    pendingRemoval,
                     raw.sizeBytes(),
                     raw.dependencies(),
                     raw.softDependencies()
@@ -144,17 +149,24 @@ public class PluginManager {
 
     public boolean loadPlugin(MinecraftServer server, String filename) {
         File file = resolvePluginFile(server, filename);
-        if (!file.exists()) {
+        if (!file.exists() || removalQueue.contains(file.toPath())) {
             return false;
         }
         return loadPluginAtRuntime(file);
     }
 
-    public void deletePlugin(MinecraftServer server, String filename) throws IOException {
-        deletePlugin(server, filename, false);
+    /** What happened to a deleted plugin's jar. */
+    public enum RemovalResult {
+        DELETED,
+        /** The server still holds the jar open; it is removed as soon as this server process exits. */
+        PENDING_RESTART
     }
 
-    public void deletePlugin(MinecraftServer server, String filename, boolean deleteConfig) throws IOException {
+    public RemovalResult deletePlugin(MinecraftServer server, String filename) throws IOException {
+        return deletePlugin(server, filename, false);
+    }
+
+    public RemovalResult deletePlugin(MinecraftServer server, String filename, boolean deleteConfig) throws IOException {
         if (filename != null && (filename.toLowerCase().contains("craftpanel") || filename.equalsIgnoreCase("craftpanel.jar"))) {
             throw new IllegalArgumentException("CraftPanel is the core system plugin and cannot be deleted.");
         }
@@ -162,7 +174,7 @@ public class PluginManager {
         File file = resolvePluginFile(server, filename);
 
         if (!file.exists()) {
-            return;
+            return RemovalResult.DELETED;
         }
 
         InstalledPlugin meta = JarMetadataExtractor.extract(file);
@@ -179,34 +191,31 @@ public class PluginManager {
             LOGGER.warn("Could not back up {} before deleting it: {}", filename, t.toString());
         }
 
-        boolean deleted = false;
-        for (int i = 0; i < 5; i++) {
-            try {
-                Files.delete(file.toPath());
-                deleted = true;
-                break;
-            } catch (IOException e) {
-                System.gc();
-                try {
-                    Thread.sleep(120);
-                } catch (InterruptedException ignored) {}
-            }
-        }
-
-        if (!deleted && file.exists()) {
-            if (!file.delete()) {
-                File deleteMe = new File(file.getParentFile(), filename + ".deleteme." + System.currentTimeMillis());
-                if (file.renameTo(deleteMe)) {
-                    deleteMe.deleteOnExit();
-                } else {
-                    file.deleteOnExit();
-                }
-            }
+        RemovalResult result = RemovalResult.DELETED;
+        try {
+            deleteJar(file);
+        } catch (IOException stillLocked) {
+            // Never report success while the jar is still there: it would simply boot again on the next start.
+            LOGGER.warn("{} is still held open by the server; it will be removed when the server stops: {}", filename, stillLocked.toString());
+            removalQueue.add(file.toPath());
+            result = RemovalResult.PENDING_RESTART;
         }
 
         if (deleteConfig) {
             deletePluginConfigDirectory(server, pluginName);
         }
+        return result;
+    }
+
+    private void deleteJar(File file) throws IOException {
+        try {
+            Files.deleteIfExists(file.toPath());
+            return;
+        } catch (IOException lockedByServer) {
+            // A plugin that failed while loading is not in the plugin manager, so unloading it released nothing.
+            PluginJarReleaser.release(file);
+        }
+        retryIo(() -> Files.deleteIfExists(file.toPath()));
     }
 
     public void deletePluginConfigDirectory(MinecraftServer server, String pluginName) {
@@ -255,6 +264,7 @@ public class PluginManager {
                 Files.copy(in, staged, StandardCopyOption.REPLACE_EXISTING);
             }
             replacePluginJar(server, staged, target);
+            removalQueue.remove(target);
         } finally {
             Files.deleteIfExists(staged);
         }
@@ -807,6 +817,7 @@ public class PluginManager {
         }
 
         unloadPluginAtRuntime(pluginName);
+        PluginJarReleaser.releaseIfPresent(target.toFile());
 
         List<String> removed = new ArrayList<>();
         File[] jars = target.getParent().toFile().listFiles((dir, name) -> name.toLowerCase().endsWith(".jar"));
@@ -819,7 +830,7 @@ public class PluginManager {
                 }
                 backupPluginFile(server, jarPath);
                 if (!isTarget) {
-                    retryIo(() -> Files.deleteIfExists(jarPath));
+                    deleteJar(jar);
                     removed.add(jar.getName());
                 }
             }

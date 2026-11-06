@@ -392,6 +392,32 @@ public class UserRepository {
         }
     }
 
+    public boolean hasServerPermissionAnywhere(String userId, String permission) {
+        String sql = "SELECT 1 FROM user_server_permissions WHERE user_id = ? AND permission IN (?, '*') LIMIT 1";
+        try (Connection conn = db.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, userId);
+            stmt.setString(2, permission);
+            try (ResultSet rs = stmt.executeQuery()) {
+                return rs.next();
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Error checking user permission", e);
+        }
+    }
+
+    public void extendSession(String token, Instant expiresAt) {
+        String sql = "UPDATE sessions SET expires_at = ? WHERE token = ?";
+        try (Connection conn = db.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, expiresAt.toString());
+            stmt.setString(2, token);
+            stmt.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("Error extending session", e);
+        }
+    }
+
     public void deleteExpiredSessions() {
         String sql = "DELETE FROM sessions WHERE expires_at < ?";
         try (Connection conn = db.getConnection();

@@ -7,6 +7,7 @@ import br.com.craftpanel.users.UserService;
 import io.javalin.http.Context;
 import io.javalin.http.UnauthorizedResponse;
 import io.javalin.http.ForbiddenResponse;
+import io.javalin.http.HandlerType;
 
 import java.util.Map;
 import java.util.Optional;
@@ -46,6 +47,11 @@ public class AuthMiddleware {
                 if (user.isPresent()) {
                     ctx.attribute("user", user.get());
                     ctx.attribute("session", session.get());
+                    // Reads are not renewed here: an idle tab keeps polling status and must still expire.
+                    // Real activity arrives as a write or through POST /api/auth/heartbeat.
+                    if (ctx.method() != HandlerType.GET && ctx.method() != HandlerType.HEAD) {
+                        authService.renewSession(session.get());
+                    }
                 }
             }
         }

@@ -14,6 +14,7 @@ import { renderMonitoring } from './views/monitoring.js';
 import { renderUsers } from './views/users.js';
 import { renderAudit } from './views/audit.js';
 import { renderSettings } from './views/settings.js';
+import { renderChat } from './views/chat.js';
 
 class AppState {
   constructor() {
@@ -63,6 +64,9 @@ class AppState {
         break;
       case 'console':
         renderConsole(contentRoot, this, params);
+        break;
+      case 'assistant':
+        renderChat(contentRoot, this, params);
         break;
       case 'files':
         renderFiles(contentRoot, this, params);
@@ -237,7 +241,7 @@ export function updateVersionBadge(v) {
 const state = new AppState();
 window.appState = state;
 
-const validViews = ['dashboard', 'servers', 'console', 'files', 'plugins', 'modrinth', 'backups', 'monitoring', 'users', 'audit', 'settings'];
+const validViews = ['dashboard', 'servers', 'console', 'assistant', 'files', 'plugins', 'modrinth', 'backups', 'monitoring', 'users', 'audit', 'settings'];
 let languageListenersBound = false;
 let mainListenersBound = false;
 
@@ -422,6 +426,27 @@ function bindMainListeners() {
   });
 
   setupHeaderQuickControls();
+  startActivityHeartbeat();
+}
+
+// The session ends after a period without activity. Only real interaction renews it: an unattended tab keeps
+// polling the server, and that must not keep it signed in forever.
+function startActivityHeartbeat() {
+  const INTERVAL_MS = 60 * 1000;
+  let lastBeat = Date.now();
+
+  const beat = () => {
+    if (document.hidden || document.getElementById('main-app')?.style.display === 'none') return;
+    const now = Date.now();
+    if (now - lastBeat < INTERVAL_MS) return;
+    lastBeat = now;
+    api.post('/api/auth/heartbeat').catch(() => {});
+  };
+
+  ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart'].forEach(type => {
+    window.addEventListener(type, beat, { passive: true, capture: true });
+  });
+  document.addEventListener('visibilitychange', beat);
 }
 
 async function populateServerSelector() {

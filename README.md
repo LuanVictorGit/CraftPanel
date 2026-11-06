@@ -6,10 +6,11 @@ CraftPanel Web is designed to run directly inside the Minecraft server (or stand
 
 ## Version
 
-Current version: **1.2.8**
+Current version: **1.3.0**
 
 ## Version History
 
+- **1.3.0**: Added an AI Assistant page and an MCP server, both built on the same permission-checked tool set. The assistant (LangChain4j with a Gemini API key from Google AI Studio) streams its reasoning, shows each tool it uses, keeps saved conversations, and asks for approval before anything that changes the server. The MCP endpoint at `/mcp` (official Java SDK) gives clients 24 tools for the console, commands, files, plugins, backups and metrics, using personal tokens that can be read-only. The console now keeps only the visible lines in the page, so long logs no longer freeze it. Plugins that fail while loading can be deleted: the panel closes the file the server left open, and when that is impossible it says so and removes the jar when the server stops, instead of reporting a success that never happened. Sessions now renew while the user is active and expire only after `session_timeout_minutes` without activity.
 - **1.2.8**: Fixed the Restart buttons stopping the server without starting it again. The old code launched start.bat or start.sh 1.5 seconds after sending stop, while the old server still held the port and the world lock, and did nothing when neither script existed. A helper process now waits until the server JVM has exited and starts it again with the same command line (in a new console window on Windows, in the background on Linux and macOS, where the panel console keeps working), leaves it alone when the launching script restarts it by itself, and logs each step to plugins/CraftPanel/restart.log. A restart that cannot be prepared is refused without stopping the server, and the panel stops waiting after 5 minutes.
 - **1.2.7**: Fixed commands of a plugin that was disabled or removed from the panel answering "An unexpected error occurred" in game: their commands are now taken out of the command map (Paper's Brigadier-backed map cannot remove through its iterator, so the old code silently left them behind) and the command tree is resynced. Runtime installs no longer call a plugin's onLoad twice on Paper and no longer pre-register commands that enablePlugin registers itself. The Modrinth Store and the Install Plugin modal now list only plugins for the server's platform and Minecraft version, project pages show only compatible builds, and the server refuses to install a file that Modrinth does not list as compatible.
 - **1.2.6**: Fixed the console being flooded with `Failed to send spark telemetry to websocket` / `ClosedChannelException` stack traces when a browser left the Monitoring page: a send to a socket that already closed is now treated as a disconnect and the client is dropped. Panel WebSockets (console, events, monitoring) now send one frame at a time per connection, which also fixes browsers silently losing task and metrics updates when two events were sent at once. Monitoring telemetry is collected once per server per tick instead of once per open browser.
@@ -37,6 +38,8 @@ CraftPanel Web operates in **Single-Instance Host Mode**:
 - **Plugins**: Manages installed JAR files in `plugins/` and installs new plugins directly via official Modrinth API.
 - **Monitoring**: Live metrics for CPU, JVM memory, disk space, and connected players (`Bukkit.getOnlinePlayers()`).
 - **Backups**: Creates ZIP archives of worlds, configurations, and plugins into `data/backups/`.
+- **AI Assistant**: Chat that operates the server through tools, using a Gemini API key set in Settings. Anything that changes the server waits for approval in the chat. Console output and files it reads are sent to Google. Requires the `ai.chat` permission.
+- **MCP Server**: `POST /mcp` with `Authorization: Bearer <token>`. Tokens are created in Settings (`mcp.tokens` permission) and act with their owner's permissions. Use HTTPS or a private network when connecting from another machine.
 
 ## In-Game & Console Commands
 

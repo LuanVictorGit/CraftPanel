@@ -116,6 +116,12 @@ public class AuthController {
         }
     }
 
+    /** Sent by the panel while the user is interacting with it; {@link AuthMiddleware} has already renewed the session. */
+    public void heartbeat(Context ctx) {
+        AuthMiddleware.requireUser(ctx);
+        ctx.json(Map.of("success", true));
+    }
+
     public void createWsTicket(Context ctx) {
         User user = AuthMiddleware.requireUser(ctx);
         Session session = ctx.attribute("session");

@@ -14,6 +14,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class AuthService {
+    private static final java.time.Duration RENEW_INTERVAL = java.time.Duration.ofMinutes(1);
     private final UserRepository userRepo;
     private final PanelConfig config;
     private final SecureRandom random = new SecureRandom();
@@ -101,6 +102,19 @@ public class AuthService {
             return Optional.empty();
         }
         return userRepo.findSessionByToken(token);
+    }
+
+    /**
+     * Sliding expiry: someone using the panel stays signed in, and the session only ends after
+     * {@code session_timeout_minutes} without activity. Writes at most once a minute per session.
+     */
+    public Instant renewSession(Session session) {
+        Instant renewed = Instant.now().plus(config.security().sessionTimeoutMinutes(), ChronoUnit.MINUTES);
+        if (session.expiresAt().isAfter(renewed.minus(RENEW_INTERVAL))) {
+            return session.expiresAt();
+        }
+        userRepo.extendSession(session.token(), renewed);
+        return renewed;
     }
 
     public void logout(String token) {

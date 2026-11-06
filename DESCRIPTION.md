@@ -25,6 +25,8 @@
 <li><strong>Real-Time Monitoring &amp; Telemetry:</strong> Live metrics tracking CPU load, JVM memory allocation, free disk space, server uptime, and online player count.</li>
 <li><strong>Integrated Backup Engine:</strong> Create automated or manual ZIP archives of server files with integrity hashing and instant web download.</li>
 <li><strong>Persistent Audit Logging:</strong> Comprehensive record of all logins, file modifications, console commands, and permission changes stored in local SQLite database.</li>
+<li><strong>AI Assistant:</strong> Chat that reads the console and files and operates the server through tools, showing its reasoning and each step. Anything that changes the server waits for your approval. Requires your own Gemini API key from Google AI Studio.</li>
+<li><strong>MCP Server:</strong> Connect AI clients to the server at <code>/mcp</code> with personal tokens, optionally read-only. 24 tools cover the console, commands, files, plugins, backups and metrics, always limited to the token owner's permissions.</li>
 <li><strong>Internationalization (i18n):</strong> English by default with instant runtime language switching to Portuguese.</li>
 </ul>
 

@@ -11,21 +11,29 @@ import java.nio.charset.CharacterCodingException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.DirectoryNotEmptyException;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import java.util.stream.Stream;
 
 public class FileManager {
     private static final long MAX_EDITABLE_SIZE_BYTES = 5 * 1024 * 1024;
     private static final Charset WINDOWS_1252 = Charset.forName("windows-1252");
     private static final String INTERNAL_DATA_DENIED = "CraftPanel's internal data cannot be accessed from the file manager";
+
+    private static final long SEARCH_MAX_FILE_BYTES = 2 * 1024 * 1024;
+    private static final Set<String> SEARCH_SKIPPED_FOLDERS = Set.of("libraries", "versions", "cache", "bundler", ".git", "crash-reports", "region");
 
     public record TextContent(String content, String charset) {}
 
@@ -138,6 +146,79 @@ public class FileManager {
             charset = StandardCharsets.UTF_8;
         }
         Files.writeString(file, text, charset);
+    }
+
+    public record SearchMatch(String path, long sizeBytes, Integer line, String preview) {}
+
+    /** Finds files by name and/or text. Worlds and bulky server folders are skipped, as is CraftPanel's own data. */
+    public List<SearchMatch> searchFiles(MinecraftServer server, String relativePath, String nameContains, String textContains, int limit) throws IOException {
+        Path root = Paths.get(server.serverDir()).toAbsolutePath().normalize();
+        Path start = PathValidator.resolveAndValidate(root, relativePath);
+        requireNotInternal(root, start);
+        if (!Files.isDirectory(start)) {
+            throw new IllegalArgumentException("Directory does not exist: " + relativePath);
+        }
+
+        String name = nameContains == null || nameContains.isBlank() ? null : nameContains.toLowerCase(Locale.ROOT);
+        String text = textContains == null || textContains.isBlank() ? null : textContains.toLowerCase(Locale.ROOT);
+        if (name == null && text == null) {
+            throw new IllegalArgumentException("Provide a name or a text to search for");
+        }
+
+        List<Path> hidden = internalRealPaths(root);
+        List<SearchMatch> matches = new ArrayList<>();
+        Files.walkFileTree(start, new SimpleFileVisitor<>() {
+            @Override
+            public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
+                if (dir.equals(start)) {
+                    return FileVisitResult.CONTINUE;
+                }
+                return SEARCH_SKIPPED_FOLDERS.contains(dir.getFileName().toString()) || Files.exists(dir.resolve("level.dat"))
+                        || isInside(PathValidator.realPath(dir), hidden)
+                        ? FileVisitResult.SKIP_SUBTREE : FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+                if (name == null || file.getFileName().toString().toLowerCase(Locale.ROOT).contains(name)) {
+                    addMatch(root, file, attrs, text, matches);
+                }
+                return matches.size() >= limit ? FileVisitResult.TERMINATE : FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult visitFileFailed(Path file, IOException exc) {
+                return FileVisitResult.CONTINUE;
+            }
+        });
+        return matches;
+    }
+
+    private void addMatch(Path root, Path file, BasicFileAttributes attrs, String text, List<SearchMatch> matches) {
+        String display = displayPath(root, file);
+        if (text == null) {
+            matches.add(new SearchMatch(display, attrs.size(), null, null));
+            return;
+        }
+        if (!attrs.isRegularFile() || attrs.size() > SEARCH_MAX_FILE_BYTES) {
+            return;
+        }
+        try {
+            TextContent content = decodeText(Files.readAllBytes(file));
+            if (content == null || content.content().indexOf('\0') >= 0) {
+                return;
+            }
+            String[] lines = content.content().split("\n", -1);
+            for (int i = 0; i < lines.length; i++) {
+                if (lines[i].toLowerCase(Locale.ROOT).contains(text)) {
+                    String line = lines[i].strip();
+                    matches.add(new SearchMatch(display, attrs.size(), i + 1, line.length() > 200 ? line.substring(0, 200) + "..." : line));
+                    return;
+                }
+            }
+        } catch (IOException ignored) {
+            // In use or unreadable: not a search result.
+        }
     }
 
     public void createDirectory(MinecraftServer server, String relativePath) throws IOException {

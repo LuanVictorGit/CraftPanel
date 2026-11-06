@@ -40,6 +40,9 @@ public final class Permission {
     public static final String MONITORING_VIEW = "monitoring.view";
     public static final String SETTINGS_MANAGE = "settings.manage";
 
+    public static final String AI_CHAT = "ai.chat";
+    public static final String MCP_TOKENS = "mcp.tokens";
+
     public static final Set<String> ALL_PERMISSIONS = Set.of(
             ALL,
             SERVER_VIEW, SERVER_START, SERVER_STOP, SERVER_RESTART, SERVER_KILL, SERVER_CREATE, SERVER_EDIT, SERVER_DELETE,
@@ -49,7 +52,8 @@ public final class Permission {
             MODRINTH_VIEW, MODRINTH_INSTALL,
             BACKUPS_VIEW, BACKUPS_MANAGE,
             USERS_VIEW, USERS_MANAGE, ROLES_MANAGE,
-            AUDIT_VIEW, MONITORING_VIEW, SETTINGS_MANAGE
+            AUDIT_VIEW, MONITORING_VIEW, SETTINGS_MANAGE,
+            AI_CHAT, MCP_TOKENS
     );
 
     private Permission() {}

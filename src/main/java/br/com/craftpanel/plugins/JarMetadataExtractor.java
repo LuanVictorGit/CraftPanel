@@ -96,6 +96,7 @@ public class JarMetadataExtractor {
                 enabled,
                 false,
                 false,
+                false,
                 sizeBytes,
                 dependencies,
                 softDependencies

@@ -14,6 +14,7 @@ public record InstalledPlugin(
         boolean enabled,
         boolean loadedInServer,
         boolean pendingRestart,
+        boolean pendingRemoval,
         long sizeBytes,
         List<String> dependencies,
         List<String> softDependencies

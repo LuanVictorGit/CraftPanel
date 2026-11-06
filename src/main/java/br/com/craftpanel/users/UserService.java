@@ -160,6 +160,11 @@ public class UserService {
         return perms.contains(Permission.ALL) || perms.contains(permission);
     }
 
+    /** For features that are not tied to one server: granted by the role or by a per-user grant on any server. */
+    public boolean hasFeaturePermission(User user, String permission) {
+        return user != null && (hasPermission(user, permission) || userRepo.hasServerPermissionAnywhere(user.id(), permission));
+    }
+
     public boolean hasServerPermission(User user, String serverId, String permission) {
         if (user == null) return false;
         if (hasPermission(user, permission)) {

@@ -82,6 +82,9 @@ export async function renderSettings(root, state) {
         </div>
       ` : ''}
 
+      <div id="ai-settings-slot" style="display:contents;"></div>
+      <div id="mcp-settings-slot" style="display:contents;"></div>
+
       <!-- Security / Change Password -->
       <div class="card">
         <h4 class="card-title" style="margin-bottom:12px;">${i18n.t('accountSecurity')}</h4>
@@ -125,6 +128,248 @@ export async function renderSettings(root, state) {
   if (serverId) {
     loadServerSettings(serverId, state);
   }
+  loadAiAndMcpCards();
+}
+
+async function loadAiAndMcpCards() {
+  try {
+    const status = await api.get('/api/ai/status');
+    if (status.canManage) renderAiCard(status);
+    if (status.canUseMcp) renderMcpCard();
+  } catch (e) {
+    // The cards are optional; the rest of the page still works.
+  }
+}
+
+async function renderAiCard(status) {
+  const slot = document.getElementById('ai-settings-slot');
+  if (!slot) return;
+
+  slot.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <h4 class="card-title">${i18n.t('aiSettingsTitle')}</h4>
+          <span class="card-subtitle">${i18n.t('aiSettingsSubtitle')}</span>
+        </div>
+        <span class="badge ${status.configured ? 'badge-green' : 'badge-gray'}">${i18n.t(status.configured ? 'aiConfigured' : 'aiNotConfigured')}</span>
+      </div>
+      <form id="ai-settings-form" style="max-width:560px;">
+        <div class="form-group">
+          <label class="form-label" for="ai-api-key">${i18n.t('aiApiKey')}</label>
+          <input type="password" id="ai-api-key" class="form-input" autocomplete="off" spellcheck="false"
+                 placeholder="${i18n.t(status.configured ? 'aiApiKeyKeep' : 'aiApiKeyPlaceholder')}">
+          <span class="form-hint">${i18n.t('aiApiKeyHint')} <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">Google AI Studio</a></span>
+        </div>
+        <div class="form-group" id="ai-model-group" style="${status.configured ? '' : 'display:none;'}">
+          <label class="form-label" for="ai-model">${i18n.t('aiModel')}</label>
+          <select id="ai-model" class="form-select"></select>
+          <span class="form-hint" id="ai-thinking-hint"></span>
+        </div>
+        <p class="form-hint" style="margin-bottom:14px;">${i18n.t('aiDataNotice')}</p>
+        <div style="display:flex;gap:8px;">
+          <button type="submit" class="btn btn-primary" id="ai-save">${i18n.t('save')}</button>
+          ${status.configured ? `<button type="button" class="btn btn-danger" id="ai-remove">${i18n.t('aiRemoveKey')}</button>` : ''}
+        </div>
+      </form>
+    </div>
+  `;
+
+  const modelSelect = document.getElementById('ai-model');
+  const thinkingHint = document.getElementById('ai-thinking-hint');
+  const updateHint = () => {
+    const option = modelSelect.selectedOptions[0];
+    if (thinkingHint) {
+      thinkingHint.textContent = option ? i18n.t(option.dataset.thinking === 'true' ? 'aiModelThinks' : 'aiModelNoThinking') : '';
+    }
+  };
+
+  if (status.configured) {
+    try {
+      const models = await api.get('/api/ai/models');
+      modelSelect.innerHTML = models.map(m => `
+        <option value="${escapeHtml(m.id)}" data-thinking="${m.thinking}" ${m.id === status.model ? 'selected' : ''}>${escapeHtml(m.displayName)} (${escapeHtml(m.id)})</option>
+      `).join('');
+      updateHint();
+    } catch (e) {
+      modelSelect.innerHTML = `<option value="${escapeHtml(status.model)}" data-thinking="${status.thinking}">${escapeHtml(status.model)}</option>`;
+      updateHint();
+      toast.error(e.message);
+    }
+  }
+  modelSelect.addEventListener('change', updateHint);
+
+  document.getElementById('ai-settings-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const saveBtn = document.getElementById('ai-save');
+    saveBtn.disabled = true;
+    try {
+      const res = await api.put('/api/ai/settings', {
+        apiKey: document.getElementById('ai-api-key').value.trim(),
+        model: modelSelect.value || ''
+      });
+      toast.success(i18n.t('aiSaved', { model: res.model }));
+      renderAiCard({ ...status, configured: true, model: res.model, thinking: res.thinking });
+    } catch (err) {
+      toast.error(err.message);
+      saveBtn.disabled = false;
+    }
+  });
+
+  document.getElementById('ai-remove')?.addEventListener('click', () => {
+    modal.confirm(i18n.t('aiRemoveKey'), i18n.t('aiRemoveConfirm'), async () => {
+      try {
+        await api.put('/api/ai/settings', { clear: true });
+        toast.success(i18n.t('operationSuccess'));
+        renderAiCard({ ...status, configured: false, model: null, thinking: false });
+      } catch (err) {
+        toast.error(err.message);
+      }
+    }, true);
+  });
+}
+
+async function renderMcpCard() {
+  const slot = document.getElementById('mcp-settings-slot');
+  if (!slot) return;
+
+  let data;
+  try {
+    data = await api.get('/api/mcp/tokens');
+  } catch (e) {
+    return;
+  }
+  const endpoint = `${window.location.origin}${data.path}`;
+
+  slot.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <h4 class="card-title">${i18n.t('mcpTitle')}</h4>
+          <span class="card-subtitle">${i18n.t('mcpSubtitle')}</span>
+        </div>
+        <button class="btn btn-primary btn-sm" id="mcp-new-token">${i18n.t('mcpNewToken')}</button>
+      </div>
+      <div class="form-group">
+        <label class="form-label">${i18n.t('mcpEndpoint')}</label>
+        <code class="mcp-endpoint">${escapeHtml(endpoint)}</code>
+      </div>
+      ${data.tokens.length === 0 ? `<p class="form-hint">${i18n.t('mcpNoTokens')}</p>` : `
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr>
+              <th>${i18n.t('mcpTokenName')}</th>
+              <th>${i18n.t('mcpTokenAccess')}</th>
+              <th>${i18n.t('mcpTokenLastUsed')}</th>
+              <th style="text-align:right;">${i18n.t('actions')}</th>
+            </tr></thead>
+            <tbody>
+              ${data.tokens.map(t => `
+                <tr>
+                  <td style="font-weight:600;">${escapeHtml(t.name)}</td>
+                  <td><span class="badge ${t.readOnly ? 'badge-gray' : 'badge-amber'}">${i18n.t(t.readOnly ? 'mcpReadOnly' : 'mcpFullAccess')}</span></td>
+                  <td style="font-size:12px;color:var(--text-muted);">${t.lastUsedAt ? escapeHtml(new Date(t.lastUsedAt * 1000).toLocaleString()) : i18n.t('mcpNeverUsed')}</td>
+                  <td style="text-align:right;"><button class="btn btn-danger btn-sm" data-revoke="${escapeHtml(t.id)}" data-name="${escapeHtml(t.name)}">${i18n.t('mcpRevoke')}</button></td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      `}
+    </div>
+  `;
+
+  document.getElementById('mcp-new-token').addEventListener('click', () => openNewTokenModal(endpoint));
+  slot.querySelectorAll('[data-revoke]').forEach(button => {
+    button.addEventListener('click', () => {
+      modal.confirm(i18n.t('mcpRevoke'), `${i18n.t('mcpRevokeConfirm')} "${button.dataset.name}"`, async () => {
+        try {
+          await api.delete(`/api/mcp/tokens/${button.dataset.revoke}`);
+          toast.success(i18n.t('operationSuccess'));
+          renderMcpCard();
+        } catch (err) {
+          toast.error(err.message);
+        }
+      }, true);
+    });
+  });
+}
+
+function openNewTokenModal(endpoint) {
+  modal.open({
+    title: i18n.t('mcpNewToken'),
+    contentHtml: `
+      <div class="form-group">
+        <label class="form-label" for="mcp-token-name">${i18n.t('mcpTokenName')}</label>
+        <input type="text" id="mcp-token-name" class="form-input" maxlength="60" placeholder="Claude Code">
+      </div>
+      <label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;cursor:pointer;">
+        <input type="checkbox" id="mcp-token-readonly" style="margin-top:3px;">
+        <span><strong>${i18n.t('mcpReadOnly')}</strong><span style="display:block;color:var(--text-muted);font-size:12px;">${i18n.t('mcpReadOnlyDesc')}</span></span>
+      </label>
+    `,
+    footerButtons: [
+      { text: i18n.t('cancel'), className: 'btn-secondary', onClick: (close) => close() },
+      {
+        text: i18n.t('create'),
+        className: 'btn-primary',
+        onClick: async (close) => {
+          try {
+            const created = await api.post('/api/mcp/tokens', {
+              name: document.getElementById('mcp-token-name').value.trim(),
+              readOnly: document.getElementById('mcp-token-readonly').checked
+            });
+            close();
+            showCreatedToken(created.token, endpoint);
+            renderMcpCard();
+          } catch (err) {
+            toast.error(err.message);
+          }
+        }
+      }
+    ]
+  });
+}
+
+function showCreatedToken(token, endpoint) {
+  const config = JSON.stringify({
+    mcpServers: {
+      craftpanel: { type: 'http', url: endpoint, headers: { Authorization: `Bearer ${token}` } }
+    }
+  }, null, 2);
+  const insecure = window.location.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(window.location.hostname);
+
+  modal.open({
+    title: i18n.t('mcpTokenCreated'),
+    wide: true,
+    contentHtml: `
+      <p style="font-size:13px;margin-bottom:10px;font-weight:600;">${i18n.t('mcpTokenOnce')}</p>
+      <div class="form-group">
+        <label class="form-label">Token</label>
+        <code class="mcp-endpoint">${escapeHtml(token)}</code>
+      </div>
+      <div class="form-group">
+        <label class="form-label">${i18n.t('mcpClientConfig')}</label>
+        <pre class="mcp-config">${escapeHtml(config)}</pre>
+      </div>
+      ${insecure ? `<p class="mcp-warning">${i18n.t('mcpInsecureWarning')}</p>` : ''}
+    `,
+    footerButtons: [
+      {
+        text: i18n.t('mcpCopyConfig'),
+        className: 'btn-secondary',
+        onClick: async () => {
+          try {
+            await navigator.clipboard.writeText(config);
+            toast.success(i18n.t('mcpCopied'));
+          } catch (e) {
+            toast.error(i18n.t('mcpCopyFailed'));
+          }
+        }
+      },
+      { text: i18n.t('close'), className: 'btn-primary', onClick: (close) => close() }
+    ]
+  });
 }
 
 async function loadServerSettings(serverId, state) {

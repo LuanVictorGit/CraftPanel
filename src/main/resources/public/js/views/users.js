@@ -168,8 +168,12 @@ const AVAILABLE_PERMS = [
   'plugins.view', 'plugins.manage',
   'modrinth.view', 'modrinth.install',
   'backups.view', 'backups.manage',
-  'server.edit'
+  'server.edit',
+  'ai.chat', 'mcp.tokens'
 ];
+
+// Connecting AI to a server is opt-in: these are never ticked by default for a new user.
+const OPT_IN_PERMS = ['ai.chat', 'mcp.tokens'];
 
 function openCreateUserModal() {
   modal.open({
@@ -213,7 +217,7 @@ function openCreateUserModal() {
           <div style="display:grid;grid-template-columns:repeat(2, 1fr);gap:8px;padding:12px;background:var(--bg-subtle);border:1px solid var(--border);border-radius:8px;max-height:180px;overflow-y:auto;" id="create-perms-list">
             ${AVAILABLE_PERMS.map(p => `
               <label style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:500;cursor:pointer;">
-                <input type="checkbox" value="${p}" class="create-perm-cb" checked>
+                <input type="checkbox" value="${p}" class="create-perm-cb" ${OPT_IN_PERMS.includes(p) ? '' : 'checked'}>
                 <span>${p}</span>
               </label>
             `).join('')}

@@ -1,5 +1,9 @@
 package br.com.craftpanel;
 
+import br.com.craftpanel.ai.AiChatHandler;
+import br.com.craftpanel.ai.AiSettings;
+import br.com.craftpanel.ai.ConversationStore;
+import br.com.craftpanel.api.AiController;
 import br.com.craftpanel.api.AuthController;
 import br.com.craftpanel.api.AuthMiddleware;
 import br.com.craftpanel.api.BackupController;
@@ -23,6 +27,8 @@ import br.com.craftpanel.console.EventsWebSocketHandler;
 import br.com.craftpanel.database.DatabaseManager;
 import br.com.craftpanel.files.FileManager;
 import br.com.craftpanel.installer.ServerInstallerService;
+import br.com.craftpanel.mcp.McpEndpoint;
+import br.com.craftpanel.mcp.McpTokenService;
 import br.com.craftpanel.modrinth.ModrinthClient;
 import br.com.craftpanel.monitoring.MonitoringService;
 import br.com.craftpanel.monitoring.ServerMetrics;
@@ -35,6 +41,7 @@ import br.com.craftpanel.servers.MinecraftServer;
 import br.com.craftpanel.servers.ServerRepository;
 import br.com.craftpanel.servers.ServerService;
 import br.com.craftpanel.tasks.TaskManager;
+import br.com.craftpanel.tools.ServerToolbox;
 import br.com.craftpanel.users.UserRepository;
 import br.com.craftpanel.users.UserService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -69,6 +76,7 @@ public class CraftPanelServer {
     private MonitoringWebSocketHandler monitoringWs;
     private ScheduledExecutorService scheduler;
     private TaskManager taskManager;
+    private McpEndpoint mcpEndpoint;
     private volatile boolean running = false;
 
     private CraftPanelServer() {}
@@ -173,6 +181,15 @@ public class CraftPanelServer {
         AuditController auditController = new AuditController(auditService, authMiddleware);
         TaskController taskController = new TaskController(taskManager);
 
+        ServerToolbox toolbox = new ServerToolbox(serverService, processManager, fileManager, pluginManager, monitoringService,
+                backupService, taskManager, userService, auditService);
+        AiSettings aiSettings = new AiSettings(db);
+        ConversationStore conversations = new ConversationStore(db);
+        McpTokenService mcpTokens = new McpTokenService(db);
+        AiController aiController = new AiController(aiSettings, conversations, mcpTokens, userService, auditService, authMiddleware);
+        AiChatHandler aiChat = new AiChatHandler(authService, userService, serverService, toolbox, aiSettings, conversations);
+        this.mcpEndpoint = new McpEndpoint(mcpTokens, userService, toolbox);
+
         ConsoleWebSocketHandler consoleWs = new ConsoleWebSocketHandler(authService, userService, serverService, processManager);
         this.monitoringWs = new MonitoringWebSocketHandler(authService, userService, monitoringService, serverService);
 
@@ -194,6 +211,7 @@ public class CraftPanelServer {
                 staticFiles.precompress = false;
             });
             cfg.http.defaultContentType = "application/json";
+            cfg.jetty.modifyServletContextHandler(mcpEndpoint::install);
         });
 
         app.before("/api/*", authMiddleware::handle);
@@ -206,6 +224,18 @@ public class CraftPanelServer {
         app.get("/api/auth/me", authController::me);
         app.post("/api/auth/change-password", authController::changePassword);
         app.post("/api/auth/ws-ticket", authController::createWsTicket);
+        app.post("/api/auth/heartbeat", authController::heartbeat);
+
+        app.get("/api/ai/status", aiController::status);
+        app.get("/api/ai/models", aiController::models);
+        app.put("/api/ai/settings", aiController::saveSettings);
+        app.get("/api/ai/conversations", aiController::listConversations);
+        app.get("/api/ai/conversations/{id}", aiController::getConversation);
+        app.delete("/api/ai/conversations/{id}", aiController::deleteConversation);
+
+        app.get("/api/mcp/tokens", aiController::listMcpTokens);
+        app.post("/api/mcp/tokens", aiController::createMcpToken);
+        app.delete("/api/mcp/tokens/{id}", aiController::revokeMcpToken);
 
         app.get("/api/servers", serverController::list);
         app.post("/api/servers", serverController::create);
@@ -280,6 +310,7 @@ public class CraftPanelServer {
 
         app.ws("/ws/console/{serverId}", consoleWs::configure);
         app.ws("/ws/events", eventsWs::configure);
+        app.ws("/ws/ai", aiChat::configure);
         app.ws("/ws/monitoring/{serverId}", monitoringWs::configure);
         app.ws("/ws/monitoring", monitoringWs::configure);
 
@@ -350,6 +381,9 @@ public class CraftPanelServer {
         }
         if (monitoringWs != null) {
             monitoringWs.stop();
+        }
+        if (mcpEndpoint != null) {
+            mcpEndpoint.stop();
         }
         if (processManager != null) {
             processManager.shutdownAll();

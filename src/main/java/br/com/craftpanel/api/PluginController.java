@@ -115,9 +115,12 @@ public class PluginController {
         }
 
         try {
-            pluginManager.deletePlugin(server, filename, deleteConfig);
-            auditService.log(user.id(), user.username(), "PLUGIN_DELETE", "PLUGIN", filename, "Deleted plugin with backup on server " + server.name() + " (deleteConfig=" + deleteConfig + ")", ctx.ip(), "SUCCESS");
-            ctx.json(Map.of("success", true));
+            PluginManager.RemovalResult result = pluginManager.deletePlugin(server, filename, deleteConfig);
+            boolean pendingRestart = result == PluginManager.RemovalResult.PENDING_RESTART;
+            auditService.log(user.id(), user.username(), "PLUGIN_DELETE", "PLUGIN", filename,
+                    (pendingRestart ? "Plugin file in use, removal scheduled for server stop on " : "Deleted plugin with backup on server ")
+                            + server.name() + " (deleteConfig=" + deleteConfig + ")", ctx.ip(), "SUCCESS");
+            ctx.json(Map.of("success", true, "pendingRestart", pendingRestart));
         } catch (Exception e) {
             ctx.status(400).json(Map.of("error", e.getMessage()));
         }

@@ -186,6 +186,33 @@ public class DatabaseManager {
                 );
             """);
 
+            stmt.execute("""
+                CREATE TABLE IF NOT EXISTS ai_conversations (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    server_id TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    messages_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                );
+            """);
+
+            stmt.execute("""
+                CREATE TABLE IF NOT EXISTS mcp_tokens (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    token_hash TEXT NOT NULL UNIQUE,
+                    read_only INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    last_used_at TEXT,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                );
+            """);
+
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_ai_conversations_user ON ai_conversations(user_id, updated_at);");
             stmt.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);");
             stmt.execute("CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);");
             stmt.execute("CREATE INDEX IF NOT EXISTS idx_audit_created_at ON audit_logs(created_at);");

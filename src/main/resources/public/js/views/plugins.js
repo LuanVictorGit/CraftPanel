@@ -90,7 +90,11 @@ function renderPluginsTable(serverId, plugins) {
           ${plugins.map(p => `
             <tr>
               <td>
-                ${p.pendingRestart ? `
+                ${p.pendingRemoval ? `
+                  <span class="badge badge-rose" title="${escapeHtml(i18n.t('pendingRemovalDesc'))}">
+                    ${i18n.t('pendingRemoval')}
+                  </span>
+                ` : p.pendingRestart ? `
                   <span class="badge badge-amber" title="Installed on disk, requires load or restart">
                     ${i18n.t('pendingRestart')}
                   </span>
@@ -118,6 +122,8 @@ function renderPluginsTable(serverId, plugins) {
                 <div style="display:inline-flex;gap:6px;align-items:center;">
                   ${((p.name && p.name.toLowerCase() === 'craftpanel') || (p.filename && p.filename.toLowerCase().includes('craftpanel'))) ? `
                     <span class="badge badge-purple" style="font-size:11px;font-weight:700;padding:4px 9px;" title="CraftPanel is the core system plugin and cannot be removed.">Core System</span>
+                  ` : p.pendingRemoval ? `
+                    <span style="font-size:12px;color:var(--text-muted);">${i18n.t('pendingRemovalAction')}</span>
                   ` : `
                     ${p.pendingRestart ? `
                       <button class="btn btn-primary btn-sm btn-load-plug" data-file="${escapeHtml(p.filename)}">
@@ -210,11 +216,16 @@ function renderPluginsTable(serverId, plugins) {
               close();
               loadingModal.show(i18n.t('deletingPlugin'), filename, -1);
               try {
-                await api.delete(`/api/servers/${serverId}/plugins`, { filename, deleteConfig });
-                loadingModal.update(100, i18n.t('pluginDeletedSuccess'));
+                const res = await api.delete(`/api/servers/${serverId}/plugins`, { filename, deleteConfig });
+                const message = i18n.t(res?.pendingRestart ? 'pluginRemovalScheduled' : 'pluginDeletedSuccess');
+                loadingModal.update(100, message);
                 await new Promise(r => setTimeout(r, 450));
                 loadingModal.hide();
-                toast.success(i18n.t('pluginDeletedSuccess'));
+                if (res?.pendingRestart) {
+                  toast.info(message);
+                } else {
+                  toast.success(message);
+                }
                 loadPlugins(serverId);
               } catch (e) {
                 loadingModal.hide();

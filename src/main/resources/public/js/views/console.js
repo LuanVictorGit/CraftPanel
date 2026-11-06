@@ -2,6 +2,7 @@ import { api } from '../api.js';
 import { toast, escapeHtml } from '../ui.js';
 import { i18n } from '../i18n.js';
 import { PanelWebSocket } from '../websocket.js';
+import { VirtualLog } from '../virtual-log.js';
 
 let activeWs = null;
 let commandHistory = [];
@@ -14,8 +15,15 @@ let debounceCompleteTimer = null;
 
 export async function renderConsole(root, state) {
   const serverId = state.activeServerId || 'local';
+  const listeners = new AbortController();
+  let log = null;
+  let searchTimer = null;
 
   state.currentCleanup = () => {
+    listeners.abort();
+    clearTimeout(searchTimer);
+    clearTimeout(debounceCompleteTimer);
+    log?.destroy();
     if (activeWs) {
       activeWs.close();
       activeWs = null;
@@ -44,7 +52,10 @@ export async function renderConsole(root, state) {
           </div>
         </div>
 
-        <div class="console-output" id="console-output-area"></div>
+        <div style="position:relative;flex:1;min-height:0;display:flex;">
+          <div class="console-output" id="console-output-area"></div>
+          <button type="button" class="console-jump-latest" id="console-jump-latest" style="display:none;"></button>
+        </div>
 
         <div style="position:relative;width:100%;">
           <!-- In-Game Minecraft Command Assistant HUD -->
@@ -84,21 +95,38 @@ export async function renderConsole(root, state) {
   const hintDesc = document.getElementById('console-hint-desc');
   const suggestionsList = document.getElementById('console-suggestions-list');
 
+  const jumpBtn = document.getElementById('console-jump-latest');
+
+  if (autoscrollChk) autoscrollChk.checked = autoscrollEnabled;
+
+  log = new VirtualLog(outputArea, {
+    renderRow: renderLine,
+    onStickChange: (following, unseen) => {
+      if (!jumpBtn) return;
+      jumpBtn.style.display = following || !autoscrollEnabled ? 'none' : 'inline-flex';
+      jumpBtn.textContent = unseen > 0
+        ? i18n.t('consoleNewLines', { count: unseen.toLocaleString() })
+        : i18n.t('consoleJumpLatest');
+    }
+  });
+  log.setAutoFollow(autoscrollEnabled);
+
+  jumpBtn?.addEventListener('click', () => log.scrollToEnd());
+
   autoscrollChk?.addEventListener('change', (e) => {
     autoscrollEnabled = e.target.checked;
+    log.setAutoFollow(autoscrollEnabled);
+    if (jumpBtn && !autoscrollEnabled) jumpBtn.style.display = 'none';
   });
 
   clearBtn?.addEventListener('click', () => {
-    if (outputArea) outputArea.innerHTML = '';
+    log.replaceAll([]);
   });
 
   searchInput?.addEventListener('input', (e) => {
-    const q = e.target.value.toLowerCase();
-    if (!outputArea) return;
-    const lines = outputArea.querySelectorAll('.console-line');
-    lines.forEach(line => {
-      line.style.display = (!q || line.innerText.toLowerCase().includes(q)) ? 'flex' : 'none';
-    });
+    clearTimeout(searchTimer);
+    const query = e.target.value;
+    searchTimer = setTimeout(() => log.setFilter(query), 120);
   });
 
   function hideAssistant() {
@@ -305,7 +333,7 @@ export async function renderConsole(root, state) {
     if (!assistantOverlay?.contains(e.target) && e.target !== cmdInput) {
       hideAssistant();
     }
-  });
+  }, { signal: listeners.signal });
 
   cmdForm?.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -328,13 +356,10 @@ export async function renderConsole(root, state) {
 
   activeWs = new PanelWebSocket(`/ws/console/${serverId}`, (data) => {
     if (data.type === 'backlog') {
-      outputArea.innerHTML = '';
-      if (data.lines && Array.isArray(data.lines)) {
-        data.lines.forEach(appendLine);
-      }
+      log.replaceAll(Array.isArray(data.lines) ? data.lines.map(toLogLine) : []);
       updateStatus(data.state);
     } else if (data.type === 'line') {
-      appendLine(data);
+      log.append([toLogLine(data)]);
     } else if (data.type === 'state') {
       updateStatus(data.state);
     } else if (data.type === 'error') {
@@ -345,7 +370,8 @@ export async function renderConsole(root, state) {
   }, () => {
     updateStatus('CONNECTED');
   }, () => {
-    updateStatus('DISCONNECTED');
+    // Leaving the page closes this socket too, and that says nothing about the server.
+    if (!listeners.signal.aborted) updateStatus('DISCONNECTED');
   });
 
   activeWs.connect();
@@ -455,9 +481,13 @@ export async function renderConsole(root, state) {
     return str;
   }
 
-  function appendLine(lineData) {
-    if (!outputArea) return;
-    const rawLine = (lineData && typeof lineData === 'object') ? (lineData.line ?? '') : String(lineData ?? '');
+  function toLogLine(lineData) {
+    const raw = (lineData && typeof lineData === 'object') ? (lineData.line ?? '') : String(lineData ?? '');
+    return { raw };
+  }
+
+  function renderLine(item) {
+    const rawLine = item.raw;
     const div = document.createElement('div');
 
     let levelClass = 'info';
@@ -473,12 +503,7 @@ export async function renderConsole(root, state) {
 
     div.className = `console-line ${levelClass}`;
     div.innerHTML = formatConsoleMessage(rawLine) || '&nbsp;';
-
-    outputArea.appendChild(div);
-
-    if (autoscrollEnabled) {
-      outputArea.scrollTop = outputArea.scrollHeight;
-    }
+    return div;
   }
 
   function updateStatus(stateStr) {
