@@ -3,7 +3,10 @@ package br.com.craftpanel.plugins;
 import org.yaml.snakeyaml.Yaml;
 
 import java.io.File;
+import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -98,9 +101,19 @@ public class JarMetadataExtractor {
                 false,
                 false,
                 sizeBytes,
+                placedAt(jarFile),
                 dependencies,
                 softDependencies
         );
+    }
+
+    // Creation time, not modification time: a copied jar keeps the modification date its author built it on.
+    private static long placedAt(File jarFile) {
+        try {
+            return Files.readAttributes(jarFile.toPath(), BasicFileAttributes.class).creationTime().toMillis();
+        } catch (IOException | RuntimeException e) {
+            return 0;
+        }
     }
 
     private static List<String> toStringList(Object obj) {

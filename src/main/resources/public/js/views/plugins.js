@@ -48,6 +48,14 @@ export async function renderPlugins(root, state) {
   await loadPlugins(serverId);
 }
 
+function dateLocale() {
+  return i18n.getLanguage() === 'pt' ? 'pt-BR' : 'en-US';
+}
+
+function formatDate(value) {
+  return new Date(value).toLocaleDateString(dateLocale());
+}
+
 async function loadPlugins(serverId) {
   try {
     const list = await api.get(`/api/servers/${serverId}/plugins`);
@@ -80,7 +88,6 @@ function renderPluginsTable(serverId, plugins) {
           <tr>
             <th>${i18n.t('status')}</th>
             <th>${i18n.t('plugin')}</th>
-            <th>${i18n.t('version')}</th>
             <th>${i18n.t('author')}</th>
             <th>${i18n.t('fileSize')}</th>
             <th style="text-align:right;">${i18n.t('actions')}</th>
@@ -109,13 +116,14 @@ function renderPluginsTable(serverId, plugins) {
                 `}
               </td>
               <td>
-                <div style="display:flex;align-items:center;gap:6px;">
+                <div class="plugin-heading">
                   <span style="font-weight:600;color:var(--text-main);">${escapeHtml(p.name)}</span>
+                  <span class="badge badge-gray plugin-version" title="${escapeHtml(i18n.t('version'))}: ${escapeHtml(p.version)}">${escapeHtml(p.version)}</span>
                   ${p.foliaSupported ? '<span class="badge badge-blue" style="font-size:9px;">Folia</span>' : ''}
+                  ${p.installedAt ? `<span class="plugin-date" title="${escapeHtml(new Date(p.installedAt).toLocaleString(dateLocale()))}">${escapeHtml(i18n.t('pluginAddedOn', { date: formatDate(p.installedAt) }))}</span>` : ''}
                 </div>
                 <div style="font-size:11px;color:var(--text-muted);">${escapeHtml(p.description || p.filename)}</div>
               </td>
-              <td><span class="badge badge-gray">${escapeHtml(p.version)}</span></td>
               <td style="color:var(--text-muted);font-size:12px;">${escapeHtml(p.author || 'Unknown')}</td>
               <td style="color:var(--text-muted);font-size:12px;">${formatBytes(p.sizeBytes)}</td>
               <td style="text-align:right;">
@@ -392,7 +400,7 @@ async function openInstallPluginModal(serverId) {
         const pageSlug = hit.slug || hit.id;
         const pageUrl = `https://modrinth.com/plugin/${encodeURIComponent(pageSlug)}`;
         return `
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;background:var(--bg-main);border:1px solid var(--border);border-radius:6px;">
+        <div class="modal-plugin-row" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;background:var(--bg-main);border:1px solid var(--border);border-radius:6px;">
           <div style="display:flex;align-items:center;gap:10px;min-width:0;flex:1;">
             ${iconSrc ? `
               <img src="${escapeHtml(iconSrc)}" alt="" style="width:38px;height:38px;border-radius:6px;flex-shrink:0;object-fit:cover;" onerror="this.onerror=null;this.style.display='none';this.nextElementSibling.style.display='flex';">
@@ -444,60 +452,7 @@ async function openInstallPluginModal(serverId) {
       resultsContainer.scrollTop = 0;
 
       resultsContainer.querySelectorAll('.btn-modal-install').forEach(btn => {
-        btn.addEventListener('click', async () => {
-          const projId = btn.dataset.project;
-          const projName = btn.dataset.name;
-          btn.disabled = true;
-          loadingModal.show(i18n.t('downloadingAndInstalling'), projName, 10);
-          try {
-            const versions = await api.get(`/api/modrinth/project/${projId}/versions`, { serverId });
-            const candidates = (Array.isArray(versions) ? versions : []).filter(v => (v.compatibility?.matchingLoaders || []).length > 0);
-            const selectedEntry = ['COMPATIBLE_CONFIRMED', 'PARTIAL_COMPATIBILITY', 'NEEDS_ANALYSIS']
-              .map(status => candidates.find(v => v.compatibility.status === status))
-              .find(Boolean);
-            if (!selectedEntry) {
-              loadingModal.hide();
-              btn.disabled = false;
-              toast.error(`${projName}: ${i18n.t('noCompatibleVersion')}`);
-              return;
-            }
-
-            const chosenVer = selectedEntry.version || selectedEntry;
-            const files = chosenVer.files || [];
-            const primaryFile = files.find(f => f.primary) || files.find(f => f.filename && f.filename.endsWith('.jar')) || files[0];
-            if (!primaryFile || !primaryFile.url) {
-              loadingModal.hide();
-              btn.disabled = false;
-              toast.error('No downloadable file in release');
-              return;
-            }
-
-            loadingModal.update(25, `${i18n.t('downloadingAndInstalling')} - ${projName}...`);
-            const task = await api.post(`/api/servers/${serverId}/modrinth/install`, {
-              fileUrl: primaryFile.url,
-              filename: primaryFile.filename,
-              hash: primaryFile.hashes?.sha512 || primaryFile.hashes?.sha1 || '',
-              projectName: projName
-            });
-
-            if (!task?.id) throw new Error('Install task was not created');
-            await api.waitForTask(task.id, t => {
-              loadingModal.update(Math.min(25 + (t.progress || 0) * 0.7, 95), `${i18n.t('downloadingAndInstalling')} - ${projName}...`);
-            });
-
-            loadingModal.update(100, i18n.t('installedSuccess'));
-            btn.innerText = i18n.t('installed');
-            btn.className = 'btn btn-secondary btn-sm';
-            await new Promise(r => setTimeout(r, 450));
-            loadingModal.hide();
-            toast.success(`${projName} ${i18n.t('installedSuccess')}`);
-            loadPlugins(serverId);
-          } catch (err) {
-            loadingModal.hide();
-            btn.disabled = false;
-            toast.error('Install failed: ' + err.message);
-          }
-        });
+        btn.addEventListener('click', () => openVersionPicker(btn, serverId));
       });
     } catch (e) {
       if (seq !== modalSearchSeq) return;
@@ -545,6 +500,96 @@ async function openInstallPluginModal(serverId) {
   fileInput?.addEventListener('change', (e) => handlePluginUpload(e, serverId));
 
   performModalSearch();
+}
+
+// Shows the versions that can be installed on this server below the plugin's row, newest first.
+async function openVersionPicker(btn, serverId) {
+  const row = btn.closest('.modal-plugin-row');
+  const wasOpen = row.nextElementSibling?.classList.contains('version-picker');
+  row.parentElement.querySelectorAll('.version-picker').forEach(panel => panel.remove());
+  if (wasOpen) return;
+
+  const projId = btn.dataset.project;
+  const projName = btn.dataset.name;
+  const panel = document.createElement('div');
+  panel.className = 'version-picker';
+  panel.textContent = i18n.t('loadingVersions');
+  row.after(panel);
+
+  let installable;
+  try {
+    const versions = await api.get(`/api/modrinth/project/${projId}/versions`, { serverId });
+    installable = (Array.isArray(versions) ? versions : [])
+      .filter(v => (v.compatibility?.matchingLoaders || []).length > 0 && jarFileOf(v.version))
+      .sort((a, b) => String(b.version.datePublished || '').localeCompare(String(a.version.datePublished || '')));
+  } catch (e) {
+    panel.textContent = e.message;
+    return;
+  }
+  if (!panel.isConnected) return;
+
+  if (installable.length === 0) {
+    panel.textContent = i18n.t('noCompatibleVersion');
+    return;
+  }
+
+  panel.innerHTML = `
+    <label class="form-label" style="margin:0;" for="version-picker-select">${i18n.t('versionToInstall')}</label>
+    <select class="form-select" id="version-picker-select">
+      ${installable.map((entry, index) => {
+        const v = entry.version;
+        const published = v.datePublished ? ` · ${formatDate(v.datePublished)}` : '';
+        const latest = index === 0 ? ` (${i18n.t('latestVersion')})` : '';
+        return `<option value="${index}">${escapeHtml(v.versionNumber || v.name)}${escapeHtml(published)}${escapeHtml(latest)}</option>`;
+      }).join('')}
+    </select>
+    <button type="button" class="btn btn-primary btn-sm" id="version-picker-install">${i18n.t('install')}</button>
+    <button type="button" class="btn btn-secondary btn-sm" id="version-picker-cancel">${i18n.t('cancel')}</button>
+  `;
+  panel.querySelector('#version-picker-cancel').addEventListener('click', () => panel.remove());
+  panel.querySelector('#version-picker-install').addEventListener('click', async () => {
+    const chosen = installable[Number(panel.querySelector('select').value)].version;
+    const installed = await installModrinthVersion(chosen, projName, serverId);
+    if (installed) {
+      panel.remove();
+      btn.innerText = i18n.t('installed');
+      btn.className = 'btn btn-secondary btn-sm btn-modal-install';
+    }
+  });
+}
+
+function jarFileOf(version) {
+  const files = version?.files || [];
+  return files.find(f => f.primary) || files.find(f => f.filename && f.filename.endsWith('.jar')) || files[0];
+}
+
+async function installModrinthVersion(version, projName, serverId) {
+  const file = jarFileOf(version);
+  const label = `${projName} ${version.versionNumber || ''}`.trim();
+  loadingModal.show(i18n.t('downloadingAndInstalling'), label, 25);
+  try {
+    const task = await api.post(`/api/servers/${serverId}/modrinth/install`, {
+      fileUrl: file.url,
+      filename: file.filename,
+      hash: file.hashes?.sha512 || file.hashes?.sha1 || '',
+      projectName: projName
+    });
+    if (!task?.id) throw new Error('Install task was not created');
+    await api.waitForTask(task.id, t => {
+      loadingModal.update(Math.min(25 + (t.progress || 0) * 0.7, 95), `${i18n.t('downloadingAndInstalling')} - ${label}...`);
+    });
+
+    loadingModal.update(100, i18n.t('installedSuccess'));
+    await new Promise(r => setTimeout(r, 450));
+    loadingModal.hide();
+    toast.success(`${label} ${i18n.t('installedSuccess')}`);
+    loadPlugins(serverId);
+    return true;
+  } catch (err) {
+    loadingModal.hide();
+    toast.error('Install failed: ' + err.message);
+    return false;
+  }
 }
 
 async function checkPluginUpdates(serverId) {

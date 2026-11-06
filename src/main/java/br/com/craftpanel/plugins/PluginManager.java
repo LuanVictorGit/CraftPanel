@@ -18,6 +18,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.BasicFileAttributeView;
+import java.nio.file.attribute.FileTime;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -97,6 +100,7 @@ public class PluginManager {
                     pendingRestart,
                     pendingRemoval,
                     raw.sizeBytes(),
+                    raw.installedAt(),
                     raw.dependencies(),
                     raw.softDependencies()
             ));
@@ -846,7 +850,18 @@ public class PluginManager {
             throw new IOException("O arquivo " + target.getFileName() + " está em uso pelo servidor. A nova versão foi salva em "
                     + target.getParent().relativize(updateDir) + "/ e será aplicada na próxima reinicialização.", locked);
         }
+        markPlacedNow(target);
         return removed;
+    }
+
+    // NTFS gives a file created under a recently removed name that name's old creation time, so an updated
+    // plugin would keep showing the date of its first install.
+    private static void markPlacedNow(Path jar) {
+        try {
+            Files.getFileAttributeView(jar, BasicFileAttributeView.class).setTimes(null, null, FileTime.from(Instant.now()));
+        } catch (IOException | RuntimeException e) {
+            LOGGER.debug("Could not set the install date of {}: {}", jar, e.toString());
+        }
     }
 
     private Path getUpdateFolder(Path pluginsDir) {

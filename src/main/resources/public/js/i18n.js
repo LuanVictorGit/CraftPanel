@@ -1,5 +1,9 @@
 const translations = {
   en: {
+    pluginAddedOn: "Added on {date}",
+    versionToInstall: "Version to install",
+    latestVersion: "latest",
+    loadingVersions: "Loading versions...",
     assistant: "Assistant",
     consoleNewLines: "{count} new lines",
     consoleJumpLatest: "Jump to latest",
@@ -416,6 +420,10 @@ const translations = {
   },
 
   pt: {
+    pluginAddedOn: "Adicionado em {date}",
+    versionToInstall: "Versão para instalar",
+    latestVersion: "mais recente",
+    loadingVersions: "Carregando versões...",
     assistant: "Assistente",
     consoleNewLines: "{count} novas linhas",
     consoleJumpLatest: "Ir para o fim",

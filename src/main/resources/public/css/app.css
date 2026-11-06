@@ -1656,3 +1656,24 @@ table.data-table tr:hover td {
 }
 .mcp-warning { padding: 8px 12px; border-radius: var(--radius-sm); background-color: var(--accent-amber-light); color: var(--accent-amber); font-size: 12px; line-height: 1.5; }
 .form-hint a { color: var(--brand-primary); text-decoration: underline; }
+
+
+/* Installed plugins */
+.plugin-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.plugin-version { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plugin-date { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+
+/* Version choice in the install dialog */
+.version-picker {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 12px;
+  background-color: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.version-picker select { flex: 1; min-width: 180px; }
