@@ -20,8 +20,6 @@ import java.util.Optional;
 public final class GeminiModels {
     private static final ObjectMapper JSON = new ObjectMapper();
 
-    public record Model(String id, String displayName, boolean thinking) {}
-
     private GeminiModels() {}
 
     /** The official endpoint; the system property only exists to point tests at a local stub. */
@@ -29,9 +27,9 @@ public final class GeminiModels {
         return System.getProperty("craftpanel.gemini.baseUrl", "https://generativelanguage.googleapis.com/v1beta");
     }
 
-    public static List<Model> list(String apiKey) throws IOException, InterruptedException {
+    public static List<AiModel> list(String apiKey) throws IOException, InterruptedException {
         HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
-        List<Model> models = new ArrayList<>();
+        List<AiModel> models = new ArrayList<>();
         String pageToken = null;
         do {
             String url = baseUrl() + "/models?pageSize=200"
@@ -49,7 +47,7 @@ public final class GeminiModels {
             for (JsonNode node : body.path("models")) {
                 if (supportsChat(node)) {
                     String id = node.path("name").asText().replaceFirst("^models/", "");
-                    models.add(new Model(id, node.path("displayName").asText(id), node.path("thinking").asBoolean(false)));
+                    models.add(new AiModel(id, node.path("displayName").asText(id), node.path("thinking").asBoolean(false)));
                 }
             }
             pageToken = body.path("nextPageToken").asText(null);
@@ -67,7 +65,7 @@ public final class GeminiModels {
     }
 
     /** A sensible first choice when a key is saved: the rolling Flash alias, or else any Flash model. */
-    public static Optional<Model> preferred(List<Model> models) {
+    public static Optional<AiModel> preferred(List<AiModel> models) {
         return models.stream().filter(m -> m.id().equals("gemini-flash-latest")).findFirst()
                 .or(() -> models.stream().filter(m -> m.id().contains("flash") && !m.id().contains("lite")).findFirst())
                 .or(() -> models.stream().findFirst());

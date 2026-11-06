@@ -8,13 +8,14 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.Optional;
 
-/** The panel-wide Gemini configuration, kept in the settings table. The key is never sent back to the browser. */
+/**
+ * The panel-wide AI configuration, kept in the settings table. Each provider keeps its own key and model, so switching
+ * back does not ask for them again. Keys are never sent back to the browser.
+ */
 public class AiSettings {
-    private static final String API_KEY = "ai.gemini.apiKey";
-    private static final String MODEL = "ai.gemini.model";
-    private static final String THINKING = "ai.gemini.thinking";
+    private static final String PROVIDER = "ai.provider";
 
-    public record GeminiConfig(String apiKey, String model, boolean thinking) {}
+    public record AiConfig(AiProvider provider, String apiKey, String model, boolean thinking) {}
 
     private final DatabaseManager db;
 
@@ -22,42 +23,66 @@ public class AiSettings {
         this.db = db;
     }
 
-    public Optional<GeminiConfig> gemini() {
-        Optional<String> key = get(API_KEY);
-        Optional<String> model = get(MODEL);
+    /** The provider and model the chat uses, if that provider has been set up. */
+    public Optional<AiConfig> active() {
+        AiProvider provider = provider();
+        Optional<String> key = apiKey(provider);
+        Optional<String> model = model(provider);
         if (key.isEmpty() || model.isEmpty()) {
             return Optional.empty();
         }
-        return Optional.of(new GeminiConfig(key.get(), model.get(), get(THINKING).map(Boolean::parseBoolean).orElse(false)));
+        boolean thinking = get(thinkingKey(provider)).map(Boolean::parseBoolean).orElse(false);
+        return Optional.of(new AiConfig(provider, key.get(), model.get(), thinking));
     }
 
-    public Optional<String> apiKey() {
-        return get(API_KEY);
+    /** Panels configured before providers existed have only a Gemini key, so Gemini is the default. */
+    public AiProvider provider() {
+        return get(PROVIDER).flatMap(AiProvider::fromId).orElse(AiProvider.GEMINI);
     }
 
-    public Optional<String> model() {
-        return get(MODEL);
+    public void saveProvider(AiProvider provider) {
+        set(PROVIDER, provider.id());
     }
 
-    public void saveApiKey(String apiKey) {
-        set(API_KEY, apiKey);
+    public Optional<String> apiKey(AiProvider provider) {
+        return get(apiKeyKey(provider));
     }
 
-    public void saveModel(String model, boolean thinking) {
-        set(MODEL, model);
-        set(THINKING, String.valueOf(thinking));
+    public Optional<String> model(AiProvider provider) {
+        return get(modelKey(provider));
     }
 
-    public void clear() {
+    public void saveApiKey(AiProvider provider, String apiKey) {
+        set(apiKeyKey(provider), apiKey);
+    }
+
+    public void saveModel(AiProvider provider, String model, boolean thinking) {
+        set(modelKey(provider), model);
+        set(thinkingKey(provider), String.valueOf(thinking));
+    }
+
+    public void clear(AiProvider provider) {
         try (Connection conn = db.getConnection();
              PreparedStatement stmt = conn.prepareStatement("DELETE FROM settings WHERE key IN (?, ?, ?)")) {
-            stmt.setString(1, API_KEY);
-            stmt.setString(2, MODEL);
-            stmt.setString(3, THINKING);
+            stmt.setString(1, apiKeyKey(provider));
+            stmt.setString(2, modelKey(provider));
+            stmt.setString(3, thinkingKey(provider));
             stmt.executeUpdate();
         } catch (SQLException e) {
             throw new RuntimeException("Error clearing AI settings", e);
         }
+    }
+
+    private static String apiKeyKey(AiProvider provider) {
+        return "ai." + provider.id() + ".apiKey";
+    }
+
+    private static String modelKey(AiProvider provider) {
+        return "ai." + provider.id() + ".model";
+    }
+
+    private static String thinkingKey(AiProvider provider) {
+        return "ai." + provider.id() + ".thinking";
     }
 
     private Optional<String> get(String key) {

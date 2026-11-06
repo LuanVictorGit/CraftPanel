@@ -40,7 +40,7 @@ public final class CraftPanelVersion {
                 }
             } catch (Throwable ignored) {}
 
-            cachedVersion = "1.3.1";
+            cachedVersion = "1.3.2";
             return cachedVersion;
         }
     }

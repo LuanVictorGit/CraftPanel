@@ -20,9 +20,11 @@ import dev.langchain4j.exception.AuthenticationException;
 import dev.langchain4j.exception.RateLimitException;
 import dev.langchain4j.http.client.jdk.JdkHttpClient;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
+import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 import dev.langchain4j.model.googleai.GeminiThinkingConfig;
 import dev.langchain4j.model.googleai.GoogleAiGeminiStreamingChatModel;
+import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
 import dev.langchain4j.service.AiServices;
 import dev.langchain4j.service.MemoryId;
 import dev.langchain4j.service.TokenStream;
@@ -47,7 +49,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 /**
- * The panel's chat: LangChain4j runs the agent loop against Gemini while this class streams thoughts, text and tool
+ * The panel's chat: LangChain4j runs the agent loop against the configured provider while this class streams thoughts, text and tool
  * activity to the browser. Tools run with the signed-in user's permissions. Console output and files can contain text
  * written by players, so anything that changes the server waits for the user's approval in the chat.
  */
@@ -193,9 +195,9 @@ public class AiChatHandler {
             send(ctx, Map.of("type", "error", "message", "The message must have between 1 and " + MAX_MESSAGE_CHARS + " characters"));
             return;
         }
-        Optional<AiSettings.GeminiConfig> gemini = settings.gemini();
-        if (gemini.isEmpty()) {
-            send(ctx, Map.of("type", "error", "message", "The AI chat is not configured yet. An administrator can add a Gemini API key in Settings."));
+        Optional<AiSettings.AiConfig> config = settings.active();
+        if (config.isEmpty()) {
+            send(ctx, Map.of("type", "error", "message", "The AI chat is not configured yet. An administrator can add an API key in Settings."));
             return;
         }
 
@@ -227,16 +229,16 @@ public class AiChatHandler {
         send(ctx, Map.of("type", "conversation", "id", conversation.id(), "title", conversation.title()));
 
         // Extension class loading inside LangChain4j looks at the context class loader, which on a Bukkit thread is not ours.
-        Thread thread = new Thread(() -> startRun(ctx, client, run, gemini.get(), server.get(), text), "craftpanel-ai");
+        Thread thread = new Thread(() -> startRun(ctx, client, run, config.get(), server.get(), text), "craftpanel-ai");
         thread.setContextClassLoader(AiChatHandler.class.getClassLoader());
         thread.setDaemon(true);
         thread.start();
     }
 
-    private void startRun(WsContext ctx, Client client, Run run, AiSettings.GeminiConfig gemini, MinecraftServer server, String text) {
+    private void startRun(WsContext ctx, Client client, Run run, AiSettings.AiConfig config, MinecraftServer server, String text) {
         try {
             Assistant assistant = AiServices.builder(Assistant.class)
-                    .streamingChatModel(buildModel(gemini))
+                    .streamingChatModel(buildModel(config))
                     .chatMemoryProvider(id -> MessageWindowChatMemory.builder()
                             .id(id)
                             .maxMessages(MAX_MEMORY_MESSAGES)
@@ -272,19 +274,33 @@ public class AiChatHandler {
                     .onError(error -> {
                         if (!run.cancelled) {
                             LOGGER.warn("AI chat failed: {}", error.toString());
-                            send(ctx, Map.of("type", "error", "message", describe(error)));
+                            send(ctx, Map.of("type", "error", "message", describe(error, config.provider())));
                         }
                         finish(ctx, client, run);
                     })
                     .start();
         } catch (Exception e) {
             LOGGER.warn("Could not start the AI chat", e);
-            send(ctx, Map.of("type", "error", "message", describe(e)));
+            send(ctx, Map.of("type", "error", "message", describe(e, config.provider())));
             finish(ctx, client, run);
         }
     }
 
-    private GoogleAiGeminiStreamingChatModel buildModel(AiSettings.GeminiConfig gemini) {
+    static StreamingChatModel buildModel(AiSettings.AiConfig config) {
+        return switch (config.provider()) {
+            case GEMINI -> buildGemini(config);
+            case OPENROUTER -> OpenAiStreamingChatModel.builder()
+                    .httpClientBuilder(JdkHttpClient.builder().connectTimeout(Duration.ofSeconds(15)).readTimeout(Duration.ofMinutes(5)))
+                    .baseUrl(OpenRouterModels.baseUrl())
+                    .apiKey(config.apiKey())
+                    .modelName(config.model())
+                    .customHeaders(Map.of("X-Title", "CraftPanel"))
+                    .timeout(Duration.ofMinutes(5))
+                    .build();
+        };
+    }
+
+    private static StreamingChatModel buildGemini(AiSettings.AiConfig gemini) {
         GoogleAiGeminiStreamingChatModel.GoogleAiGeminiStreamingChatModelBuilder builder = GoogleAiGeminiStreamingChatModel.builder()
                 .httpClientBuilder(JdkHttpClient.builder().connectTimeout(Duration.ofSeconds(15)).readTimeout(Duration.ofMinutes(5)))
                 .baseUrl(GeminiModels.baseUrl())
@@ -416,12 +432,12 @@ public class AiChatHandler {
                 """.formatted(server.name(), server.software(), server.minecraftVersion(), server.id());
     }
 
-    private static String describe(Throwable error) {
+    private static String describe(Throwable error, AiProvider provider) {
         if (error instanceof AuthenticationException) {
-            return "Gemini rejected the API key. Check it in Settings.";
+            return provider.label() + " rejected the API key. Check it in Settings.";
         }
         if (error instanceof RateLimitException) {
-            return "Gemini quota or rate limit reached. Wait a little or check the quota of your API key.";
+            return provider.label() + " quota or rate limit reached. Wait a little or check the quota of your API key.";
         }
         String message = error.getMessage();
         return message == null || message.isBlank() ? error.getClass().getSimpleName() : message;

@@ -1,8 +1,9 @@
 package br.com.craftpanel.api;
 
+import br.com.craftpanel.ai.AiModel;
+import br.com.craftpanel.ai.AiProvider;
 import br.com.craftpanel.ai.AiSettings;
 import br.com.craftpanel.ai.ConversationStore;
-import br.com.craftpanel.ai.GeminiModels;
 import br.com.craftpanel.audit.AuditService;
 import br.com.craftpanel.mcp.McpEndpoint;
 import br.com.craftpanel.mcp.McpTokenService;
@@ -55,27 +56,44 @@ public class AiController {
     public void status(Context ctx) {
         User user = AuthMiddleware.requireUser(ctx);
         Map<String, Object> status = new HashMap<>();
-        Optional<AiSettings.GeminiConfig> gemini = settings.gemini();
-        status.put("configured", gemini.isPresent());
-        status.put("model", gemini.map(AiSettings.GeminiConfig::model).orElse(null));
-        status.put("thinking", gemini.map(AiSettings.GeminiConfig::thinking).orElse(false));
+        Optional<AiSettings.AiConfig> active = settings.active();
+        status.put("configured", active.isPresent());
+        status.put("provider", settings.provider().id());
+        status.put("model", active.map(AiSettings.AiConfig::model).orElse(null));
+        status.put("thinking", active.map(AiSettings.AiConfig::thinking).orElse(false));
         status.put("canChat", userService.hasFeaturePermission(user, Permission.AI_CHAT));
         status.put("canManage", userService.hasPermission(user, Permission.SETTINGS_MANAGE));
         status.put("canUseMcp", userService.hasFeaturePermission(user, Permission.MCP_TOKENS));
+        if (userService.hasPermission(user, Permission.SETTINGS_MANAGE)) {
+            Map<String, Object> providers = new LinkedHashMap<>();
+            for (AiProvider provider : AiProvider.values()) {
+                Map<String, Object> saved = new HashMap<>();
+                saved.put("hasKey", settings.apiKey(provider).isPresent());
+                saved.put("model", settings.model(provider).orElse(null));
+                providers.put(provider.id(), saved);
+            }
+            status.put("providers", providers);
+        }
         ctx.json(status);
     }
 
     public void models(Context ctx) {
         authMiddleware.requirePermission(ctx, Permission.SETTINGS_MANAGE);
-        Optional<String> key = settings.apiKey();
+        String requested = ctx.queryParam("provider");
+        Optional<AiProvider> provider = requested == null ? Optional.of(settings.provider()) : AiProvider.fromId(requested);
+        if (provider.isEmpty()) {
+            ctx.status(400).json(Map.of("error", "Unknown AI provider"));
+            return;
+        }
+        Optional<String> key = settings.apiKey(provider.get());
         if (key.isEmpty()) {
             ctx.json(List.of());
             return;
         }
         try {
-            ctx.json(GeminiModels.list(key.get()));
+            ctx.json(provider.get().listModels(key.get()));
         } catch (Exception e) {
-            ctx.status(502).json(Map.of("error", "Could not list Gemini models: " + e.getMessage()));
+            ctx.status(502).json(Map.of("error", "Could not list " + provider.get().label() + " models: " + e.getMessage()));
         }
     }
 
@@ -84,40 +102,50 @@ public class AiController {
         User user = AuthMiddleware.requireUser(ctx);
         JsonNode body = ctx.bodyAsClass(JsonNode.class);
 
+        Optional<AiProvider> requestedProvider = body.hasNonNull("provider")
+                ? AiProvider.fromId(body.path("provider").asText())
+                : Optional.of(settings.provider());
+        if (requestedProvider.isEmpty()) {
+            ctx.status(400).json(Map.of("error", "Unknown AI provider"));
+            return;
+        }
+        AiProvider provider = requestedProvider.get();
+
         if (body.path("clear").asBoolean(false)) {
-            settings.clear();
-            auditService.log(user.id(), user.username(), "AI_SETTINGS", "SETTINGS", "gemini", "Removed the Gemini API key", ctx.ip(), "SUCCESS");
+            settings.clear(provider);
+            auditService.log(user.id(), user.username(), "AI_SETTINGS", "SETTINGS", provider.id(), "Removed the " + provider.label() + " API key", ctx.ip(), "SUCCESS");
             ctx.json(Map.of("success", true));
             return;
         }
 
         String newKey = body.path("apiKey").asText("").trim();
-        String key = newKey.isEmpty() ? settings.apiKey().orElse(null) : newKey;
+        String key = newKey.isEmpty() ? settings.apiKey(provider).orElse(null) : newKey;
         if (key == null) {
-            ctx.status(400).json(Map.of("error", "Enter a Gemini API key"));
+            ctx.status(400).json(Map.of("error", "Enter a " + provider.label() + " API key"));
             return;
         }
 
-        List<GeminiModels.Model> models;
+        List<AiModel> models;
         try {
-            models = GeminiModels.list(key);
+            models = provider.listModels(key);
         } catch (Exception e) {
-            ctx.status(400).json(Map.of("error", "Gemini did not accept this key: " + e.getMessage()));
+            ctx.status(400).json(Map.of("error", provider.label() + " did not accept this key: " + e.getMessage()));
             return;
         }
 
         String requested = body.path("model").asText("").trim();
-        String wanted = requested.isEmpty() ? settings.model().orElse("") : requested;
-        Optional<GeminiModels.Model> chosen = models.stream().filter(m -> m.id().equals(wanted)).findFirst()
-                .or(() -> GeminiModels.preferred(models));
+        String wanted = requested.isEmpty() ? settings.model(provider).orElse("") : requested;
+        Optional<AiModel> chosen = models.stream().filter(m -> m.id().equals(wanted)).findFirst()
+                .or(() -> provider.preferred(models));
         if (chosen.isEmpty()) {
-            ctx.status(400).json(Map.of("error", "This key has no Gemini chat models available"));
+            ctx.status(400).json(Map.of("error", "This key has no " + provider.label() + " chat models available"));
             return;
         }
 
-        settings.saveApiKey(key);
-        settings.saveModel(chosen.get().id(), chosen.get().thinking());
-        auditService.log(user.id(), user.username(), "AI_SETTINGS", "SETTINGS", "gemini", "Gemini model set to " + chosen.get().id(), ctx.ip(), "SUCCESS");
+        settings.saveApiKey(provider, key);
+        settings.saveModel(provider, chosen.get().id(), chosen.get().thinking());
+        settings.saveProvider(provider);
+        auditService.log(user.id(), user.username(), "AI_SETTINGS", "SETTINGS", provider.id(), provider.label() + " model set to " + chosen.get().id(), ctx.ip(), "SUCCESS");
         ctx.json(Map.of("success", true, "model", chosen.get().id(), "thinking", chosen.get().thinking()));
     }
 

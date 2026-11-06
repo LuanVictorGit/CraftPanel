@@ -141,9 +141,17 @@ async function loadAiAndMcpCards() {
   }
 }
 
-async function renderAiCard(status) {
+const AI_PROVIDERS = {
+  gemini: { label: 'Google Gemini', keyUrl: 'https://aistudio.google.com/apikey', keySite: 'Google AI Studio', notice: 'aiDataNotice' },
+  openrouter: { label: 'OpenRouter', keyUrl: 'https://openrouter.ai/settings/keys', keySite: 'OpenRouter', notice: 'aiDataNoticeOpenRouter' }
+};
+
+async function renderAiCard(status, selected = status.provider) {
   const slot = document.getElementById('ai-settings-slot');
   if (!slot) return;
+
+  const provider = AI_PROVIDERS[selected];
+  const saved = status.providers?.[selected] || { hasKey: false, model: null };
 
   slot.innerHTML = `
     <div class="card">
@@ -156,24 +164,32 @@ async function renderAiCard(status) {
       </div>
       <form id="ai-settings-form" style="max-width:560px;">
         <div class="form-group">
+          <label class="form-label" for="ai-provider">${i18n.t('aiProvider')}</label>
+          <select id="ai-provider" class="form-select">
+            ${Object.entries(AI_PROVIDERS).map(([id, p]) => `<option value="${id}" ${id === selected ? 'selected' : ''}>${escapeHtml(p.label)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
           <label class="form-label" for="ai-api-key">${i18n.t('aiApiKey')}</label>
           <input type="password" id="ai-api-key" class="form-input" autocomplete="off" spellcheck="false"
-                 placeholder="${i18n.t(status.configured ? 'aiApiKeyKeep' : 'aiApiKeyPlaceholder')}">
-          <span class="form-hint">${i18n.t('aiApiKeyHint')} <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">Google AI Studio</a></span>
+                 placeholder="${i18n.t(saved.hasKey ? 'aiApiKeyKeep' : 'aiApiKeyPlaceholder')}">
+          <span class="form-hint">${i18n.t('aiApiKeyHint')} <a href="${provider.keyUrl}" target="_blank" rel="noopener noreferrer">${provider.keySite}</a></span>
         </div>
-        <div class="form-group" id="ai-model-group" style="${status.configured ? '' : 'display:none;'}">
+        <div class="form-group" id="ai-model-group" style="${saved.hasKey ? '' : 'display:none;'}">
           <label class="form-label" for="ai-model">${i18n.t('aiModel')}</label>
           <select id="ai-model" class="form-select"></select>
           <span class="form-hint" id="ai-thinking-hint"></span>
         </div>
-        <p class="form-hint" style="margin-bottom:14px;">${i18n.t('aiDataNotice')}</p>
+        <p class="form-hint" style="margin-bottom:14px;">${i18n.t(provider.notice)}</p>
         <div style="display:flex;gap:8px;">
           <button type="submit" class="btn btn-primary" id="ai-save">${i18n.t('save')}</button>
-          ${status.configured ? `<button type="button" class="btn btn-danger" id="ai-remove">${i18n.t('aiRemoveKey')}</button>` : ''}
+          ${saved.hasKey ? `<button type="button" class="btn btn-danger" id="ai-remove">${i18n.t('aiRemoveKey')}</button>` : ''}
         </div>
       </form>
     </div>
   `;
+
+  document.getElementById('ai-provider').addEventListener('change', (e) => renderAiCard(status, e.target.value));
 
   const modelSelect = document.getElementById('ai-model');
   const thinkingHint = document.getElementById('ai-thinking-hint');
@@ -184,15 +200,15 @@ async function renderAiCard(status) {
     }
   };
 
-  if (status.configured) {
+  if (saved.hasKey) {
     try {
-      const models = await api.get('/api/ai/models');
+      const models = await api.get(`/api/ai/models?provider=${encodeURIComponent(selected)}`);
       modelSelect.innerHTML = models.map(m => `
-        <option value="${escapeHtml(m.id)}" data-thinking="${m.thinking}" ${m.id === status.model ? 'selected' : ''}>${escapeHtml(m.displayName)} (${escapeHtml(m.id)})</option>
+        <option value="${escapeHtml(m.id)}" data-thinking="${m.thinking}" ${m.id === saved.model ? 'selected' : ''}>${escapeHtml(m.displayName)} (${escapeHtml(m.id)})</option>
       `).join('');
       updateHint();
     } catch (e) {
-      modelSelect.innerHTML = `<option value="${escapeHtml(status.model)}" data-thinking="${status.thinking}">${escapeHtml(status.model)}</option>`;
+      modelSelect.innerHTML = `<option value="${escapeHtml(saved.model || '')}" data-thinking="false">${escapeHtml(saved.model || '')}</option>`;
       updateHint();
       toast.error(e.message);
     }
@@ -205,11 +221,12 @@ async function renderAiCard(status) {
     saveBtn.disabled = true;
     try {
       const res = await api.put('/api/ai/settings', {
+        provider: selected,
         apiKey: document.getElementById('ai-api-key').value.trim(),
         model: modelSelect.value || ''
       });
       toast.success(i18n.t('aiSaved', { model: res.model }));
-      renderAiCard({ ...status, configured: true, model: res.model, thinking: res.thinking });
+      renderAiCard(await api.get('/api/ai/status'));
     } catch (err) {
       toast.error(err.message);
       saveBtn.disabled = false;
@@ -219,9 +236,9 @@ async function renderAiCard(status) {
   document.getElementById('ai-remove')?.addEventListener('click', () => {
     modal.confirm(i18n.t('aiRemoveKey'), i18n.t('aiRemoveConfirm'), async () => {
       try {
-        await api.put('/api/ai/settings', { clear: true });
+        await api.put('/api/ai/settings', { provider: selected, clear: true });
         toast.success(i18n.t('operationSuccess'));
-        renderAiCard({ ...status, configured: false, model: null, thinking: false });
+        renderAiCard(await api.get('/api/ai/status'), selected);
       } catch (err) {
         toast.error(err.message);
       }
